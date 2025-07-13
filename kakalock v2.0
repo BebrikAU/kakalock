@@ -1,93 +1,100 @@
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 
--- Функция для показа уведомления
+-- Уведомление о загрузке
 local function showNotification(text)
     local notification = Instance.new("TextLabel")
-    notification.Name = "ScriptNotification"
-    notification.Text = text
-    notification.TextColor3 = Color3.new(1, 1, 1)
-    notification.TextSize = 18
+    notification.Text = "⚡ "..text
+    notification.TextColor3 = Color3.new(1,1,1)
+    notification.TextStrokeColor3 = Color3.new(0,0,0)
+    notification.TextStrokeTransparency = 0
+    notification.TextSize = 16
     notification.Font = Enum.Font.SourceSansBold
-    notification.BackgroundColor3 = Color3.new(0, 0, 0)
+    notification.BackgroundColor3 = Color3.new(0,0,0)
     notification.BackgroundTransparency = 0.5
-    notification.Size = UDim2.new(0, 200, 0, 50)
-    notification.Position = UDim2.new(1, -210, 1, -60)
-    notification.AnchorPoint = Vector2.new(1, 1)
+    notification.Size = UDim2.new(0, 180, 0, 40)
+    notification.Position = UDim2.new(1, -190, 1, -50)
+    notification.AnchorPoint = Vector2.new(1,1)
     notification.Parent = gui
     
-    -- Анимация плавного исчезновения
-    spawn(function()
-        wait(3)
-        for i = 0.5, 1, 0.05 do
-            notification.BackgroundTransparency = i
+    task.delay(3, function()
+        for i = 0, 1, 0.05 do
+            notification.BackgroundTransparency = 0.5 + i/2
             notification.TextTransparency = i
-            wait(0.05)
+            task.wait(0.05)
         end
         notification:Destroy()
     end)
 end
 
--- Показываем уведомление о загрузке
-showNotification("⚡ Tackle Script\nУспешно загружен!")
+showNotification("LOKI Script Loaded")
 
--- Удаляем старый GUI если есть
+-- Удаляем старый GUI
 if gui:FindFirstChild("MobileControls") then
     gui.MobileControls:Destroy()
 end
 
--- Остальной код скрипта (создание кнопок и функционал) остается без изменений...
+-- Создаем основной интерфейс
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MobileControls"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = gui
 
--- Стиль для кнопок
+-- Стиль для кнопок (как в игре)
 local buttonStyle = {
-    Size = UDim2.new(0, 80, 0, 80),
-    BackgroundTransparency = 0.3,
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 16,
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    ZIndex = 10,
+    Size = UDim2.new(0, 65, 0, 65), -- Уменьшенный размер
+    BackgroundColor3 = Color3.fromRGB(70, 70, 70),
+    BackgroundTransparency = 0.4,
+    TextColor3 = Color3.new(1,1,1),
+    TextStrokeColor3 = Color3.new(0,0,0), -- Черная обводка текста
+    TextStrokeTransparency = 0,
+    TextSize = 12, -- Уменьшенный размер текста
+    Font = Enum.Font.SourceSansBold,
+    AnchorPoint = Vector2.new(0.5,0.5),
     AutoButtonColor = false
 }
 
--- Создаем кнопки с разными цветами
-local tackleBtn = Instance.new("TextButton")
-tackleBtn.Name = "TACKLE"
-tackleBtn.Text = "TACKLE"
-tackleBtn.BackgroundColor3 = Color3.fromRGB(0, 102, 255) -- Синий цвет
-tackleBtn.Position = UDim2.new(0.2, 0, 0.8, 0)
-tackleBtn.Parent = screenGui
-
-local teleportBtn = Instance.new("TextButton")
-teleportBtn.Name = "TELEPORT"
-teleportBtn.Text = "TELEPORT"
-teleportBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- Красный цвет
-teleportBtn.Position = UDim2.new(0.4, 0, 0.8, 0)
-teleportBtn.Parent = screenGui
-
--- Применяем общий стиль к кнопкам
-for _, btn in pairs({tackleBtn, teleportBtn}) do
+-- Создаем кнопки
+local function createButton(name, color, position)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Text = name
+    btn.BackgroundColor3 = color
+    btn.Position = position
+    
+    -- Применяем стиль
     for prop, value in pairs(buttonStyle) do
-        if prop ~= "BackgroundColor3" then
-            btn[prop] = value
-        end
+        btn[prop] = value
     end
     
+    -- Белая обводка
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.new(1,1,1)
+    stroke.Thickness = 2
+    stroke.Parent = btn
+    
+    -- Скругление
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
+    corner.CornerRadius = UDim.new(1,0)
     corner.Parent = btn
     
+    -- Эффект нажатия
     btn.MouseButton1Down:Connect(function()
         btn.BackgroundTransparency = 0.6
     end)
     
     btn.MouseButton1Up:Connect(function()
-        btn.BackgroundTransparency = 0.3
+        btn.BackgroundTransparency = 0.4
     end)
+    
+    btn.Parent = screenGui
+    return btn
 end
+
+-- Создаем 3 кнопки как в игре
+local tackleBtn = createButton("TACKLE", Color3.fromRGB(0, 102, 255), UDim2.new(0.2, 0, 0.8, 0))
+local teleportBtn = createButton("TELEPORT", Color3.fromRGB(255, 60, 60), UDim2.new(0.4, 0, 0.8, 0))
+local lokiBtn = createButton("LOKI", Color3.fromRGB(120, 0, 200), UDim2.new(0.6, 0, 0.8, 0))
 
 -- Функция Tackle
 local function doTackle()
@@ -105,7 +112,7 @@ local function doTackle()
     end
 end
 
--- Функция телепорта с учетом команды
+-- Функция телепорта
 local function doTeleport()
     pcall(function()
         local character = player.Character
@@ -123,9 +130,24 @@ local function doTeleport()
     end)
 end
 
+-- Функция LOKI (скорость 65)
+local function doLoki()
+    pcall(function()
+        local character = player.Character
+        if not character then return end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = 65
+            showNotification("LOKI: Speed 65")
+        end
+    end)
+end
+
 -- Привязываем функции
 tackleBtn.MouseButton1Click:Connect(doTackle)
 teleportBtn.MouseButton1Click:Connect(doTeleport)
+lokiBtn.MouseButton1Click:Connect(doLoki)
 
 -- Система перемещения кнопок
 local function makeDraggable(btn)
@@ -166,3 +188,4 @@ end
 
 makeDraggable(tackleBtn)
 makeDraggable(teleportBtn)
+makeDraggable(lokiBtn)
