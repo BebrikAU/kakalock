@@ -1,12 +1,42 @@
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 
+-- Функция для показа уведомления
+local function showNotification(text)
+    local notification = Instance.new("TextLabel")
+    notification.Name = "ScriptNotification"
+    notification.Text = text
+    notification.TextColor3 = Color3.new(1, 1, 1)
+    notification.TextSize = 18
+    notification.Font = Enum.Font.SourceSansBold
+    notification.BackgroundColor3 = Color3.new(0, 0, 0)
+    notification.BackgroundTransparency = 0.5
+    notification.Size = UDim2.new(0, 200, 0, 50)
+    notification.Position = UDim2.new(1, -210, 1, -60)
+    notification.AnchorPoint = Vector2.new(1, 1)
+    notification.Parent = gui
+    
+    -- Анимация плавного исчезновения
+    spawn(function()
+        wait(3)
+        for i = 0.5, 1, 0.05 do
+            notification.BackgroundTransparency = i
+            notification.TextTransparency = i
+            wait(0.05)
+        end
+        notification:Destroy()
+    end)
+end
+
+-- Показываем уведомление о загрузке
+showNotification("⚡ Tackle Script\nУспешно загружен!")
+
 -- Удаляем старый GUI если есть
 if gui:FindFirstChild("MobileControls") then
     gui.MobileControls:Destroy()
 end
 
--- Создаем основной интерфейс
+-- Остальной код скрипта (создание кнопок и функционал) остается без изменений...
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MobileControls"
 screenGui.ResetOnSpawn = false
@@ -25,8 +55,8 @@ local buttonStyle = {
 
 -- Создаем кнопки с разными цветами
 local tackleBtn = Instance.new("TextButton")
-tackleBtn.Name = "BUGTACKLE"
-tackleBtn.Text = "BUGTACKLE"
+tackleBtn.Name = "TACKLE"
+tackleBtn.Text = "TACKLE"
 tackleBtn.BackgroundColor3 = Color3.fromRGB(0, 102, 255) -- Синий цвет
 tackleBtn.Position = UDim2.new(0.2, 0, 0.8, 0)
 tackleBtn.Parent = screenGui
@@ -34,14 +64,14 @@ tackleBtn.Parent = screenGui
 local teleportBtn = Instance.new("TextButton")
 teleportBtn.Name = "TELEPORT"
 teleportBtn.Text = "TELEPORT"
-teleportBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- Красный цвет как на фото
+teleportBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- Красный цвет
 teleportBtn.Position = UDim2.new(0.4, 0, 0.8, 0)
 teleportBtn.Parent = screenGui
 
 -- Применяем общий стиль к кнопкам
 for _, btn in pairs({tackleBtn, teleportBtn}) do
     for prop, value in pairs(buttonStyle) do
-        if prop ~= "BackgroundColor3" then -- Не перезаписываем цвет
+        if prop ~= "BackgroundColor3" then
             btn[prop] = value
         end
     end
@@ -50,7 +80,6 @@ for _, btn in pairs({tackleBtn, teleportBtn}) do
     corner.CornerRadius = UDim.new(1, 0)
     corner.Parent = btn
     
-    -- Эффект нажатия
     btn.MouseButton1Down:Connect(function()
         btn.BackgroundTransparency = 0.6
     end)
