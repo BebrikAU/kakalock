@@ -1,0 +1,123 @@
+-- Версия 1.1 - Мобильный интерфейс с инжектором
+local loadstring = loadstring or load
+local success, err = pcall(function()
+    local player = game:GetService("Players").LocalPlayer
+    local gui = player:WaitForChild("PlayerGui")
+
+    -- Удаляем старый GUI если есть
+    local oldGui = gui:FindFirstChild("MobileControls")
+    if oldGui then oldGui:Destroy() end
+
+    -- Создаем основной интерфейс
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "MobileControls"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = gui
+
+    -- Стиль для кнопок
+    local buttonStyle = {
+        Size = UDim2.new(0, 60, 0, 60),
+        BackgroundColor3 = Color3.fromRGB(70, 70, 70),
+        BackgroundTransparency = 0.5,
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 14,
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        ZIndex = 10
+    }
+
+    -- Создаем и настраиваем кнопки
+    local function createButton(name, position)
+        local btn = Instance.new("TextButton")
+        btn.Name = name
+        btn.Position = position
+        btn.Parent = screenGui
+        
+        for prop, value in pairs(buttonStyle) do
+            btn[prop] = value
+        end
+        
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = btn
+        
+        return btn
+    end
+
+    local tackleBtn = createButton("TackleBtn", UDim2.new(0.2, 0, 0.8, 0))
+    local teleportBtn = createButton("TeleportBtn", UDim2.new(0.4, 0, 0.8, 0))
+
+    -- Функции действий
+    local function doTackle()
+        local target = workspace:FindFirstChild("Ball") or workspace:FindFirstChildOfClass("BasePart")
+        local remotePaths = {game:GetService("ReplicatedStorage"), player.PlayerGui, player.Character}
+        
+        for _, location in pairs(remotePaths) do
+            if location then
+                for _, remote in pairs(location:GetDescendants()) do
+                    if remote:IsA("RemoteEvent") and (remote.Name:find("Tackle") or remote.Name:find("Hitbox")) then
+                        pcall(remote.FireServer, remote, target)
+                    end
+                end
+            end
+        end
+    end
+
+    local function doTeleport()
+        pcall(function()
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = CFrame.new(-2263.6, -25.5, 1029.0)
+            end
+        end)
+    end
+
+    -- Привязка функций
+    tackleBtn.MouseButton1Click:Connect(doTackle)
+    teleportBtn.MouseButton1Click:Connect(doTeleport)
+
+    -- Система перемещения для мобильных устройств
+    local function makeDraggable(btn)
+        local dragging, dragInput, dragStart, startPos
+        
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = btn.Position
+                
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+        
+        btn.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+        
+        game:GetService("UserInputService").InputChanged:Connect(function(input)
+            if dragging and input == dragInput then
+                local delta = input.Position - dragStart
+                btn.Position = UDim2.new(
+                    startPos.X.Scale, 
+                    startPos.X.Offset + delta.X, 
+                    startPos.Y.Scale, 
+                    startPos.Y.Offset + delta.Y
+                )
+            end
+        end)
+    end
+
+    makeDraggable(tackleBtn)
+    makeDraggable(teleportBtn)
+
+    return "Успешно создан мобильный интерфейс!"
+end)
+
+if not success then
+    warn("Ошибка загрузки скрипта: "..tostring(err))
+end
