@@ -1,123 +1,186 @@
--- Версия 1.1 - Мобильный интерфейс с инжектором
-local loadstring = loadstring or load
-local success, err = pcall(function()
-    local player = game:GetService("Players").LocalPlayer
-    local gui = player:WaitForChild("PlayerGui")
+local player = game:GetService("Players").LocalPlayer
+local gui = player:WaitForChild("PlayerGui")
 
-    -- Удаляем старый GUI если есть
-    local oldGui = gui:FindFirstChild("MobileControls")
-    if oldGui then oldGui:Destroy() end
-
-    -- Создаем основной интерфейс
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "MobileControls"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = gui
-
-    -- Стиль для кнопок
-    local buttonStyle = {
-        Size = UDim2.new(0, 60, 0, 60),
-        BackgroundColor3 = Color3.fromRGB(70, 70, 70),
-        BackgroundTransparency = 0.5,
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 14,
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        ZIndex = 10
-    }
-
-    -- Создаем и настраиваем кнопки
-    local function createButton(name, position)
-        local btn = Instance.new("TextButton")
-        btn.Name = name
-        btn.Position = position
-        btn.Parent = screenGui
-        
-        for prop, value in pairs(buttonStyle) do
-            btn[prop] = value
+-- Уведомление о загрузке
+local function showNotification(text)
+    local notification = Instance.new("TextLabel")
+    notification.Text = "⚡ "..text
+    notification.TextColor3 = Color3.new(1,1,1)
+    notification.TextStrokeColor3 = Color3.new(0,0,0)
+    notification.TextStrokeTransparency = 0
+    notification.TextSize = 16
+    notification.Font = Enum.Font.SourceSansBold
+    notification.BackgroundColor3 = Color3.new(0,0,0)
+    notification.BackgroundTransparency = 0.5
+    notification.Size = UDim2.new(0, 180, 0, 40)
+    notification.Position = UDim2.new(1, -190, 1, -50)
+    notification.AnchorPoint = Vector2.new(1,1)
+    notification.Parent = gui
+    
+    task.delay(3, function()
+        for i = 0, 1, 0.05 do
+            notification.BackgroundTransparency = 0.5 + i/2
+            notification.TextTransparency = i
+            task.wait(0.05)
         end
-        
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(1, 0)
-        corner.Parent = btn
-        
-        return btn
+        notification:Destroy()
+    end)
+end
+
+showNotification("LOKI Script Loaded")
+
+-- Удаляем старый GUI
+if gui:FindFirstChild("MobileControls") then
+    gui.MobileControls:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MobileControls"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = gui
+
+local buttonStyle = {
+    Size = UDim2.new(0, 80, 0, 80),
+    BackgroundTransparency = 0.3,
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 16,
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    ZIndex = 10,
+    AutoButtonColor = false
+}
+
+-- Создаем кнопки
+local function createButton(name, color, position)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Text = name
+    btn.BackgroundColor3 = color
+    btn.Position = position
+    
+    -- Применяем стиль
+    for prop, value in pairs(buttonStyle) do
+        btn[prop] = value
     end
+    
+    -- Белая обводка
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.new(1,1,1)
+    stroke.Thickness = 2
+    stroke.Parent = btn
+    
+    -- Скругление
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1,0)
+    corner.Parent = btn
+    
+    -- Эффект нажатия
+    btn.MouseButton1Down:Connect(function()
+        btn.BackgroundTransparency = 0.6
+    end)
+    
+    btn.MouseButton1Up:Connect(function()
+        btn.BackgroundTransparency = 0.4
+    end)
+    
+    btn.Parent = screenGui
+    return btn
+end
 
-    local tackleBtn = createButton("TackleBtn", UDim2.new(0.2, 0, 0.8, 0))
-    local teleportBtn = createButton("TeleportBtn", UDim2.new(0.4, 0, 0.8, 0))
+-- Создаем 3 кнопки как в игре
+local tackleBtn = createButton("TACKLE", Color3.fromRGB(0, 102, 255), UDim2.new(0.2, 0, 0.8, 0))
+local teleportBtn = createButton("TELEPORT", Color3.fromRGB(255, 60, 60), UDim2.new(0.4, 0, 0.8, 0))
+local lokiBtn = createButton("LOKI", Color3.fromRGB(120, 0, 200), UDim2.new(0.6, 0, 0.8, 0))
 
-    -- Функции действий
-    local function doTackle()
-        local target = workspace:FindFirstChild("Ball") or workspace:FindFirstChildOfClass("BasePart")
-        local remotePaths = {game:GetService("ReplicatedStorage"), player.PlayerGui, player.Character}
-        
-        for _, location in pairs(remotePaths) do
-            if location then
-                for _, remote in pairs(location:GetDescendants()) do
-                    if remote:IsA("RemoteEvent") and (remote.Name:find("Tackle") or remote.Name:find("Hitbox")) then
-                        pcall(remote.FireServer, remote, target)
-                    end
+-- Функция Tackle
+local function doTackle()
+    local target = workspace:FindFirstChild("Ball") or workspace:FindFirstChildOfClass("BasePart")
+    local remotePaths = {game:GetService("ReplicatedStorage"), player.PlayerGui, player.Character}
+    
+    for _, location in pairs(remotePaths) do
+        if location then
+            for _, remote in pairs(location:GetDescendants()) do
+                if remote:IsA("RemoteEvent") and (remote.Name:find("Tackle") or remote.Name:find("Hitbox")) then
+                    pcall(remote.FireServer, remote, target)
                 end
             end
         end
     end
-
-    local function doTeleport()
-        pcall(function()
-            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.CFrame = CFrame.new(-2263.6, -25.5, 1029.0)
-            end
-        end)
-    end
-
-    -- Привязка функций
-    tackleBtn.MouseButton1Click:Connect(doTackle)
-    teleportBtn.MouseButton1Click:Connect(doTeleport)
-
-    -- Система перемещения для мобильных устройств
-    local function makeDraggable(btn)
-        local dragging, dragInput, dragStart, startPos
-        
-        btn.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                dragStart = input.Position
-                startPos = btn.Position
-                
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then
-                        dragging = false
-                    end
-                end)
-            end
-        end)
-        
-        btn.InputChanged:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch then
-                dragInput = input
-            end
-        end)
-        
-        game:GetService("UserInputService").InputChanged:Connect(function(input)
-            if dragging and input == dragInput then
-                local delta = input.Position - dragStart
-                btn.Position = UDim2.new(
-                    startPos.X.Scale, 
-                    startPos.X.Offset + delta.X, 
-                    startPos.Y.Scale, 
-                    startPos.Y.Offset + delta.Y
-                )
-            end
-        end)
-    end
-
-    makeDraggable(tackleBtn)
-    makeDraggable(teleportBtn)
-
-    return "Успешно создан мобильный интерфейс!"
-end)
-
-if not success then
-    warn("Ошибка загрузки скрипта: "..tostring(err))
 end
+
+-- телепорт
+local function doTeleport()
+    pcall(function()
+        local character = player.Character
+        if not character then return end
+        
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        
+        local team = player.Team and player.Team.Name or "Default"
+        local targetPosition = team == "Red" and Vector3.new(-2263.6, -25.5, 1029.0)
+                          or team == "Blue" and Vector3.new(-2839.7, -25.5, 1029.6)
+                          or Vector3.new(-2238.1218, -25.3756, 1050.0332)
+        
+        hrp.CFrame = CFrame.new(targetPosition)
+    end)
+end
+
+-- Функция LOKI (скорость 65)
+local function doLoki()
+    pcall(function()
+        local character = player.Character
+        if not character then return end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = 65
+            showNotification("LOKI: Speed 65")
+        end
+    end)
+end
+
+-- Привязываем функции
+tackleBtn.MouseButton1Click:Connect(doTackle)
+teleportBtn.MouseButton1Click:Connect(doTeleport)
+lokiBtn.MouseButton1Click:Connect(doLoki)
+
+-- Система перемещения кнопок
+local function makeDraggable(btn)
+    local dragging, dragInput, dragStart, startPos
+    
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = btn.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    btn.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if dragging and input == dragInput then
+            local delta = input.Position - dragStart
+            btn.Position = UDim2.new(
+                startPos.X.Scale, 
+                startPos.X.Offset + delta.X, 
+                startPos.Y.Scale, 
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+makeDraggable(tackleBtn)
+makeDraggable(teleportBtn)
+makeDraggable(lokiBtn)
