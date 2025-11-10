@@ -1,15 +1,20 @@
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+print("PopStar 2.0 Script: Starting...")
 
 -- Уведомление о загрузке
 local function showNotification(text)
+    print("PopStar Notification: " .. text)
     local notification = Instance.new("TextLabel")
     notification.Text = "⚡ "..text
     notification.TextColor3 = Color3.new(1,1,1)
-    notification.TextStrokeColor3 = Color3.new(0,0,0)
-    notification.TextStrokeTransparency = 0
     notification.TextSize = 16
-    notification.Font = Enum.Font.SourceSansBold
+    notification.Font = Enum.Font.GothamBold
     notification.BackgroundColor3 = Color3.new(0,0,0)
     notification.BackgroundTransparency = 0.5
     notification.Size = UDim2.new(0, 180, 0, 40)
@@ -27,87 +32,250 @@ local function showNotification(text)
     end)
 end
 
-showNotification("LOKI Script Loaded")
+showNotification("PopStar 2.0 Loaded")
 
 -- Удаляем старый GUI
 if gui:FindFirstChild("MobileControls") then
     gui.MobileControls:Destroy()
 end
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "MobileControls"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = gui
-
-local buttonStyle = {
-    Size = UDim2.new(0, 80, 0, 80),
-    BackgroundTransparency = 0.3,
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 16,
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    ZIndex = 10,
-    AutoButtonColor = false
-}
-
--- Создаем кнопки
-local function createButton(name, color, position)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Text = name
-    btn.BackgroundColor3 = color
-    btn.Position = position
-    
-    -- Применяем стиль
-    for prop, value in pairs(buttonStyle) do
-        btn[prop] = value
-    end
-    
-    -- Белая обводка
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.new(1,1,1)
-    stroke.Thickness = 2
-    stroke.Parent = btn
-    
-    -- Скругление
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1,0)
-    corner.Parent = btn
-    
-    -- Эффект нажатия
-    btn.MouseButton1Down:Connect(function()
-        btn.BackgroundTransparency = 0.6
-    end)
-    
-    btn.MouseButton1Up:Connect(function()
-        btn.BackgroundTransparency = 0.4
-    end)
-    
-    btn.Parent = screenGui
-    return btn
+if gui:FindFirstChild("DesktopControls") then
+    gui.DesktopControls:Destroy()
 end
 
--- Создаем 3 кнопки как в игре
-local tackleBtn = createButton("TACKLE", Color3.fromRGB(0, 102, 255), UDim2.new(0.2, 0, 0.8, 0))
-local teleportBtn = createButton("TELEPORT", Color3.fromRGB(255, 60, 60), UDim2.new(0.4, 0, 0.8, 0))
-local lokiBtn = createButton("LOKI", Color3.fromRGB(120, 0, 200), UDim2.new(0.6, 0, 0.8, 0))
+if gui:FindFirstChild("POPSTAR_GUI") then
+    gui.POPSTAR_GUI:Destroy()
+end
 
--- Функция Tackle
-local function doTackle()
-    local target = workspace:FindFirstChild("Ball") or workspace:FindFirstChildOfClass("BasePart")
-    local remotePaths = {game:GetService("ReplicatedStorage"), player.PlayerGui, player.Character}
+-- Определяем тип устройства
+local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+local isDesktop = UserInputService.MouseEnabled
+
+print("PopStar Device: Mobile=" .. tostring(isMobile) .. ", Desktop=" .. tostring(isDesktop))
+
+-- Глобальные переменные
+local originalWalkSpeed = 16
+local isSpeedLocked = false
+local extendedHitboxes = {}
+local metavisionEnabled = false
+local isOptimized = false
+
+-- Функция Optimizator
+local function toggleOptimizator()
+    isOptimized = not isOptimized
     
-    for _, location in pairs(remotePaths) do
-        if location then
-            for _, remote in pairs(location:GetDescendants()) do
-                if remote:IsA("RemoteEvent") and (remote.Name:find("Tackle") or remote.Name:find("Hitbox")) then
-                    pcall(remote.FireServer, remote, target)
+    if isOptimized then
+        -- Убираем все эффекты
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            end
+        end
+        
+        -- Убираем текстуры
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Part") and obj.Texture then
+                obj.Texture = ""
+            end
+        end
+        
+        -- Меняем небо
+        Lighting.Sky.SkyboxBk = "rbxasset://textures/sky/sky_512_bk.tex"
+        Lighting.Sky.SkyboxDn = "rbxasset://textures/sky/sky_512_dn.tex"
+        Lighting.Sky.SkyboxFt = "rbxasset://textures/sky/sky_512_ft.tex"
+        Lighting.Sky.SkyboxLf = "rbxasset://textures/sky/sky_512_lf.tex"
+        Lighting.Sky.SkyboxRt = "rbxasset://textures/sky/sky_512_rt.tex"
+        Lighting.Sky.SkyboxUp = "rbxasset://textures/sky/sky_512_up.tex"
+        
+        showNotification("OPTIMIZATOR: ACTIVATED")
+    else
+        -- Восстанавливаем эффекты
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                obj.Enabled = true
+            end
+        end
+        
+        showNotification("OPTIMIZATOR: DEACTIVATED")
+    end
+end
+
+-- Функции из вашего файла
+local function toggleMetavision()
+    metavisionEnabled = not metavisionEnabled
+    
+    if metavisionEnabled then
+        player:SetAttribute("Metavision", true)
+        player:SetAttribute("PabloMetavision", true)
+        
+        pcall(function()
+            local rs = game:GetService("ReplicatedStorage")
+            if rs:FindFirstChild("METAVISION_ACTIVATION") then
+                rs.METAVISION_ACTIVATION:FireServer()
+            end
+        end)
+        
+        showNotification("METAVISION: ACTIVATED")
+    else
+        player:SetAttribute("Metavision", false)
+        player:SetAttribute("PabloMetavision", false)
+        
+        pcall(function()
+            local rs = game:GetService("ReplicatedStorage")
+            if rs:FindFirstChild("METAVISION_DEACTIVATION") then
+                rs.METAVISION_DEACTIVATION:FireServer()
+            end
+        end)
+        
+        showNotification("METAVISION: DEACTIVATED")
+    end
+end
+
+local function lockSpeed()
+    pcall(function()
+        local character = player.Character
+        if not character then return end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            originalWalkSpeed = humanoid.WalkSpeed
+            isSpeedLocked = true
+            
+            while isSpeedLocked and task.wait(0.1) do
+                if humanoid and humanoid.WalkSpeed ~= 65 then
+                    humanoid.WalkSpeed = 65
                 end
+            end
+        end
+    end)
+end
+
+local function extendHitboxes()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:find("Hitbox") or obj.Name:find("Tackle")) then
+            if not extendedHitboxes[obj] then
+                extendedHitboxes[obj] = {
+                    Size = obj.Size,
+                    CanCollide = obj.CanCollide
+                }
+                
+                obj.Size = obj.Size * 3
+                obj.CanCollide = true
             end
         end
     end
 end
 
--- телепорт
+local function restoreHitboxes()
+    for obj, originalData in pairs(extendedHitboxes) do
+        if obj and obj.Parent then
+            obj.Size = originalData.Size
+            obj.CanCollide = originalData.CanCollide
+        end
+    end
+    extendedHitboxes = {}
+end
+
+local function doTackle()
+    pcall(function()
+        local character = player.Character
+        if not character then return end
+        
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        
+        showNotification("TACKLE: ACTIVATED")
+        
+        local tackleBV = Instance.new("BodyVelocity")
+        tackleBV.Name = "TackleBV"
+        tackleBV.MaxForce = Vector3.new(4000, 0, 4000)
+        tackleBV.Velocity = hrp.CFrame.LookVector * 150
+        tackleBV.Parent = hrp
+        
+        local airTackleRemotes = {
+            "AltTackle_RE", "IkkTrackle_RE", "TackleImpact_RE", "Tackle_RE",
+            "TackleHit_RE", "TackleSliderE", "WCTackleCancel", "AltTackleFmit",
+            "TackleCDRE", "TackleBeastCutscene"
+        }
+        
+        local targets = {}
+        
+        local ball = workspace:FindFirstChild("Ball")
+        if ball then
+            table.insert(targets, ball)
+        end
+        
+        local players = game:GetService("Players"):GetPlayers()
+        for _, targetPlayer in pairs(players) do
+            if targetPlayer ~= player and targetPlayer.Character then
+                local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetHrp then
+                    local distance = (hrp.Position - targetHrp.Position).Magnitude
+                    if distance < 50 then
+                        table.insert(targets, targetHrp)
+                    end
+                end
+            end
+        end
+        
+        local remoteLocations = {
+            game:GetService("ReplicatedStorage"), player.PlayerGui,
+            player.Character, workspace, game:GetService("Lighting")
+        }
+        
+        local activatedCount = 0
+        
+        for _, location in pairs(remoteLocations) do
+            if location then
+                for _, remote in pairs(location:GetDescendants()) do
+                    if remote:IsA("RemoteEvent") then
+                        for _, remoteName in pairs(airTackleRemotes) do
+                            if remote.Name == remoteName then
+                                pcall(function()
+                                    for _, target in pairs(targets) do
+                                        remote:FireServer(target)
+                                        activatedCount = activatedCount + 1
+                                    end
+                                    remote:FireServer()
+                                    activatedCount = activatedCount + 1
+                                end)
+                            end
+                        end
+                        
+                        if remote.Name:lower():find("tackle") or 
+                           remote.Name:lower():find("air") or 
+                           remote.Name:lower():find("hit") then
+                            pcall(function()
+                                for _, target in pairs(targets) do
+                                    remote:FireServer(target)
+                                    activatedCount = activatedCount + 1
+                                end
+                                remote:FireServer()
+                                activatedCount = activatedCount + 1
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+        
+        extendHitboxes()
+        
+        if activatedCount > 0 then
+            showNotification("Tackle: " .. activatedCount .. " events")
+        else
+            showNotification("Tackle: Movement activated")
+        end
+        
+        task.delay(2, function()
+            if tackleBV and tackleBV.Parent then
+                tackleBV:Destroy()
+            end
+            restoreHitboxes()
+        end)
+    end)
+end
+
 local function doTeleport()
     pcall(function()
         local character = player.Character
@@ -122,10 +290,10 @@ local function doTeleport()
                           or Vector3.new(-2238.1218, -25.3756, 1050.0332)
         
         hrp.CFrame = CFrame.new(targetPosition)
+        showNotification("TELEPORT: COMPLETE")
     end)
 end
 
--- Функция LOKI (скорость 65)
 local function doLoki()
     pcall(function()
         local character = player.Character
@@ -134,44 +302,293 @@ local function doLoki()
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if humanoid then
             humanoid.WalkSpeed = 65
-            showNotification("LOKI: Speed 65")
+            lockSpeed()
+            showNotification("LOKI: Speed 65 (LOCKED)")
         end
     end)
 end
 
--- Привязываем функции
-tackleBtn.MouseButton1Click:Connect(doTackle)
-teleportBtn.MouseButton1Click:Connect(doTeleport)
-lokiBtn.MouseButton1Click:Connect(doLoki)
+local function doShot()
+    pcall(function()
+        showNotification("SHOT: ACTIVATED")
+    end)
+end
 
--- Система перемещения кнопок
-local function makeDraggable(btn)
-    local dragging, dragInput, dragStart, startPos
+-- Переменные для GUI
+local mainGUI
+local mainFrame
+local isGUIVisible = false
+
+-- Функция создания GUI для ПК в стиле жидкого стекла
+local function createDesktopGUI()
+    print("PopStar: Creating Desktop GUI...")
     
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
+    mainGUI = Instance.new("ScreenGui")
+    mainGUI.Name = "POPSTAR_GUI"
+    mainGUI.ResetOnSpawn = false
+    mainGUI.Parent = gui
+
+    -- Основной контейнер с эффектом жидкого стекла
+    mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 320, 0, 400)
+    mainFrame.Position = UDim2.new(0.5, -160, 0.5, -200)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    mainFrame.BackgroundTransparency = 0.9
+    mainFrame.BorderSizePixel = 0
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 20)
+    corner.Parent = mainFrame
+    
+    -- Обводка для эффекта стекла
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.7
+    stroke.Parent = mainFrame
+    
+    -- Градиентный фон с эффектом стекла
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.3, Color3.fromRGB(240, 240, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 220, 255))
+    })
+    gradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.85),
+        NumberSequenceKeypoint.new(1, 0.92)
+    })
+    gradient.Rotation = 120
+    gradient.Parent = mainFrame
+    
+    -- Заголовок
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Text = "PopStar 2.0"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 28
+    title.Font = Enum.Font.GothamBold
+    title.BackgroundTransparency = 1
+    title.Size = UDim2.new(1, 0, 0, 60)
+    title.Position = UDim2.new(0, 0, 0, 10)
+    title.Parent = mainFrame
+    
+    -- Разделитель с градиентом
+    local divider = Instance.new("Frame")
+    divider.Name = "Divider"
+    divider.Size = UDim2.new(0.7, 0, 0, 2)
+    divider.Position = UDim2.new(0.15, 0, 0, 70)
+    divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    divider.BackgroundTransparency = 0.7
+    divider.BorderSizePixel = 0
+    
+    local dividerGradient = Instance.new("UIGradient")
+    dividerGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 100, 255))
+    })
+    dividerGradient.Parent = divider
+    divider.Parent = mainFrame
+    
+    -- Контейнер для кнопок
+    local buttonsContainer = Instance.new("ScrollingFrame")
+    buttonsContainer.Name = "ButtonsContainer"
+    buttonsContainer.Size = UDim2.new(1, -30, 1, -90)
+    buttonsContainer.Position = UDim2.new(0, 15, 0, 80)
+    buttonsContainer.BackgroundTransparency = 1
+    buttonsContainer.BorderSizePixel = 0
+    buttonsContainer.ScrollBarThickness = 4
+    buttonsContainer.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+    buttonsContainer.ScrollBarImageTransparency = 0.7
+    buttonsContainer.CanvasSize = UDim2.new(0, 0, 0, 500)
+    buttonsContainer.Parent = mainFrame
+    
+    local uiListLayout = Instance.new("UIListLayout")
+    uiListLayout.FillDirection = Enum.FillDirection.Vertical
+    uiListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    uiListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+    uiListLayout.Padding = UDim.new(0, 12)
+    uiListLayout.Parent = buttonsContainer
+    
+    -- Функция создания кнопок в стиле жидкого стекла
+    local function createGlassButton(name, color)
+        local buttonFrame = Instance.new("Frame")
+        buttonFrame.Name = name .. "Button"
+        buttonFrame.Size = UDim2.new(0.95, 0, 0, 45)
+        buttonFrame.BackgroundColor3 = color
+        buttonFrame.BackgroundTransparency = 0.85
+        buttonFrame.BorderSizePixel = 0
+        
+        local buttonCorner = Instance.new("UICorner")
+        buttonCorner.CornerRadius = UDim.new(0, 15)
+        buttonCorner.Parent = buttonFrame
+        
+        -- Обводка кнопки
+        local buttonStroke = Instance.new("UIStroke")
+        buttonStroke.Color = Color3.fromRGB(255, 255, 255)
+        buttonStroke.Thickness = 2
+        buttonStroke.Transparency = 0.7
+        buttonStroke.Parent = buttonFrame
+        
+        -- Градиент для кнопки
+        local buttonGradient = Instance.new("UIGradient")
+        buttonGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(1, color)
+        })
+        buttonGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.8),
+            NumberSequenceKeypoint.new(1, 0.9)
+        })
+        buttonGradient.Parent = buttonFrame
+        
+        local buttonText = Instance.new("TextLabel")
+        buttonText.Name = "ButtonText"
+        buttonText.Text = name
+        buttonText.TextColor3 = Color3.fromRGB(255, 255, 255)
+        buttonText.TextSize = 16
+        buttonText.Font = Enum.Font.GothamSemibold
+        buttonText.BackgroundTransparency = 1
+        buttonText.Size = UDim2.new(1, 0, 1, 0)
+        buttonText.Parent = buttonFrame
+        
+        local button = Instance.new("TextButton")
+        button.Name = "ClickButton"
+        button.Text = ""
+        button.BackgroundTransparency = 1
+        button.Size = UDim2.new(1, 0, 1, 0)
+        button.Parent = buttonFrame
+        
+        -- Анимации при наведении
+        button.MouseEnter:Connect(function()
+            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 0.75,
+                Size = UDim2.new(0.97, 0, 0, 48)
+            })
+            tween:Play()
+        end)
+        
+        button.MouseLeave:Connect(function()
+            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 0.85,
+                Size = UDim2.new(0.95, 0, 0, 45)
+            })
+            tween:Play()
+        end)
+        
+        button.MouseButton1Down:Connect(function()
+            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.1), {
+                BackgroundTransparency = 0.7
+            })
+            tween:Play()
+        end)
+        
+        button.MouseButton1Up:Connect(function()
+            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.1), {
+                BackgroundTransparency = 0.75
+            })
+            tween:Play()
+        end)
+        
+        return buttonFrame, button
+    end
+
+    -- Создаем кнопки с правильными названиями
+    local buttonData = {
+        {"Metavision", Color3.fromRGB(255, 100, 100), toggleMetavision},
+        {"Shot", Color3.fromRGB(100, 200, 255), doShot},
+        {"Tackle", Color3.fromRGB(255, 200, 100), doTackle},
+        {"Teleport", Color3.fromRGB(100, 255, 150), doTeleport},
+        {"Optimizator", Color3.fromRGB(200, 100, 255), toggleOptimizator}
+    }
+
+    for i, data in ipairs(buttonData) do
+        local buttonName, buttonColor, buttonFunc = data[1], data[2], data[3]
+        local buttonFrame, button = createGlassButton(buttonName, buttonColor)
+        buttonFrame.Parent = buttonsContainer
+        
+        button.MouseButton1Click:Connect(buttonFunc)
+    end
+
+    -- Скрываем GUI по умолчанию
+    mainFrame.Visible = false
+    mainFrame.Parent = mainGUI
+    
+    print("PopStar: Desktop GUI created successfully")
+end
+
+-- Функция для переключения видимости GUI
+local function toggleGUI()
+    if not mainFrame then
+        print("PopStar: GUI not created yet, creating now...")
+        createDesktopGUI()
+    end
+    
+    isGUIVisible = not isGUIVisible
+    mainFrame.Visible = isGUIVisible
+    
+    print("PopStar: GUI visibility set to: " .. tostring(isGUIVisible))
+    
+    if isGUIVisible then
+        local tween = TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            BackgroundTransparency = 0.85,
+            Size = UDim2.new(0, 320, 0, 400)
+        })
+        tween:Play()
+    else
+        local tween = TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            BackgroundTransparency = 0.95,
+            Size = UDim2.new(0, 320, 0, 0)
+        })
+        tween:Play()
+    end
+end
+
+-- Создаем GUI только для ПК
+if isDesktop then
+    print("PopStar: Initializing Desktop version...")
+    
+    createDesktopGUI()
+    
+    -- Привязываем открытие/закрытие к правому Shift
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == Enum.KeyCode.RightShift then
+            print("PopStar: RightShift pressed - toggling GUI")
+            toggleGUI()
+        end
+    end)
+
+    -- Бинд для Metavision на клавишу N
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == Enum.KeyCode.N then
+            print("PopStar: N pressed - toggling Metavision")
+            toggleMetavision()
+        end
+    end)
+
+    -- Система перемещения GUI
+    local dragging = false
+    local dragStart, startPos
+
+    mainFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             dragStart = input.Position
-            startPos = btn.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
+            startPos = mainFrame.Position
+            print("PopStar: Started dragging GUI")
         end
     end)
-    
-    btn.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    
-    game:GetService("UserInputService").InputChanged:Connect(function(input)
-        if dragging and input == dragInput then
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
-            btn.Position = UDim2.new(
+            mainFrame.Position = UDim2.new(
                 startPos.X.Scale, 
                 startPos.X.Offset + delta.X, 
                 startPos.Y.Scale, 
@@ -179,8 +596,43 @@ local function makeDraggable(btn)
             )
         end
     end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+            print("PopStar: Stopped dragging GUI")
+        end
+    end)
 end
 
-makeDraggable(tackleBtn)
-makeDraggable(teleportBtn)
-makeDraggable(lokiBtn)
+-- Защита от сброса скорости
+local function setupSpeedProtection()
+    local character = player.Character
+    if not character then
+        player.CharacterAdded:Wait()
+        character = player.Character
+    end
+    
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if isSpeedLocked and humanoid.WalkSpeed ~= 65 then
+            humanoid.WalkSpeed = 65
+        end
+    end)
+end
+
+-- Инициализация защиты скорости
+player.CharacterAdded:Connect(setupSpeedProtection)
+if player.Character then
+    setupSpeedProtection()
+end
+
+print("PopStar 2.0 Script: Fully loaded!")
+showNotification("PopStar 2.0 Loaded - RSHIFT to open, N for Metavision")
+
+-- Дебаг информация
+print("PopStar Debug Info:")
+print("- RightShift: Open/Close GUI")
+print("- N: Toggle Metavision")
+print("- Device: " .. (isDesktop and "Desktop" or "Mobile"))
