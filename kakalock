@@ -1,30 +1,100 @@
-local player = game:GetService("Players").LocalPlayer
-local gui = player:WaitForChild("PlayerGui")
-local RunService = game:GetService("RunService")
+--------------------------------------------
+-- 📦 Подключаем библиотеку GlassUI
+---------------------------------------------------------------------
+local GlassUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/BebrikAU/GlassUi-script-roblox/refs/heads/main/glassui.lua"))()
+
+---------------------------------------------------------------------
+-- 🧱 Сервисы и базовые переменные
+---------------------------------------------------------------------
+local StarterGui       = game:GetService("StarterGui")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
+local TweenService     = game:GetService("TweenService")
+local Lighting         = game:GetService("Lighting")
+-- Эффект блюра для "стекла"
+local blurEffect = Lighting:FindFirstChild("PopStarBlur")
+if not blurEffect then
+    blurEffect = Instance.new("BlurEffect")
+    blurEffect.Name = "PopStarBlur"
+    blurEffect.Size = 0
+    blurEffect.Enabled = true
+    blurEffect.Parent = Lighting
+end
+
+
+local player = Players.LocalPlayer
+local gui    = player:WaitForChild("PlayerGui")
+
+-- ❌ отключаем дефолтный TAB-лист Roblox
+pcall(function()
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+end)
 
 print("PopStar 2.0 Script: Starting...")
 
--- Уведомление о загрузке
+-- Определяем тип устройства
+local isMobile  = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+local isDesktop = UserInputService.MouseEnabled
+
+print("PopStar Device: Mobile=" .. tostring(isMobile) .. ", Desktop=" .. tostring(isDesktop))
+
+-- Глобальные переменные
+local originalWalkSpeed = 16
+local isSpeedLocked     = false
+local extendedHitboxes  = {}
+local metavisionEnabled = false
+local isOptimized       = false
+
+-- Система биндов
+local keybinds = {
+    toggleMetavision   = nil,
+    toggleSpeed        = nil,
+    doShot             = nil,
+    doTackle           = nil,
+    doTeleport         = nil,
+    toggleInterface    = nil,
+    toggleOptimizator  = nil
+}
+local waitingForBind = nil
+local bindingButton  = nil
+
+-- Интерфейс (оверлей)
+local interfaceGUI
+local watermark
+local statsPanel
+local playersPanel
+local ppShadow  -- переменная для хранения тени панели игроков
+local ppStroke  -- переменная для хранения обводки панели игроков
+local isInterfaceVisible = false
+
+-- Основное окно (из GlassUI)
+local mainFrame
+local isGUIVisible = false
+
+-- forward declaration, чтобы можно было использовать в кнопках
+local toggleInterface
+
+---------------------------------------------------------------------
+-- 🔔 Уведомление
+---------------------------------------------------------------------
 local function showNotification(text)
     print("PopStar Notification: " .. text)
     local notification = Instance.new("TextLabel")
-    notification.Text = "⚡ "..text
-    notification.TextColor3 = Color3.new(1,1,1)
+    notification.Text = "⚡ " .. text
+    notification.TextColor3 = Color3.new(1, 1, 1)
     notification.TextSize = 16
     notification.Font = Enum.Font.GothamBold
-    notification.BackgroundColor3 = Color3.new(0,0,0)
+    notification.BackgroundColor3 = Color3.new(0, 0, 0)
     notification.BackgroundTransparency = 0.5
     notification.Size = UDim2.new(0, 180, 0, 40)
     notification.Position = UDim2.new(1, -190, 1, -50)
-    notification.AnchorPoint = Vector2.new(1,1)
+    notification.AnchorPoint = Vector2.new(1, 1)
     notification.Parent = gui
-    
+
     task.delay(3, function()
         for i = 0, 1, 0.05 do
-            notification.BackgroundTransparency = 0.5 + i/2
+            notification.BackgroundTransparency = 0.5 + i / 2
             notification.TextTransparency = i
             task.wait(0.05)
         end
@@ -34,7 +104,9 @@ end
 
 showNotification("PopStar 2.0 Loaded")
 
--- Удаляем старый GUI
+---------------------------------------------------------------------
+-- 🧹 Чистим старый GUI
+---------------------------------------------------------------------
 if gui:FindFirstChild("MobileControls") then
     gui.MobileControls:Destroy()
 end
@@ -47,43 +119,16 @@ if gui:FindFirstChild("POPSTAR_GUI") then
     gui.POPSTAR_GUI:Destroy()
 end
 
--- Определяем тип устройства
-local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
-local isDesktop = UserInputService.MouseEnabled
+if gui:FindFirstChild("POPSTAR_INTERFACE") then
+    gui.POPSTAR_INTERFACE:Destroy()
+end
 
-print("PopStar Device: Mobile=" .. tostring(isMobile) .. ", Desktop=" .. tostring(isDesktop))
-
--- Глобальные переменные
-local originalWalkSpeed = 16
-local isSpeedLocked = false
-local extendedHitboxes = {}
-local metavisionEnabled = false
-local isOptimized = false
-
--- Система биндов
-local keybinds = {
-    toggleMetavision = nil,
-    toggleSpeed = nil,
-    doShot = nil,
-    doTackle = nil,
-    doTeleport = nil,
-    toggleInterface = nil,
-    toggleOptimizator = nil
-}
-local waitingForBind = nil
-local bindingButton = nil
-
--- Переменные для интерфейса
-local interfaceGUI
-local watermark
-local statsPanel
-local playersPanel
-local isInterfaceVisible = false
-
--- Функция Optimizator
+---------------------------------------------------------------------
+-- ⚙️ Optimizator
+---------------------------------------------------------------------
 local function toggleOptimizator()
     isOptimized = not isOptimized
-    
+
     if isOptimized then
         -- Убираем все эффекты
         for _, obj in pairs(workspace:GetDescendants()) do
@@ -91,22 +136,25 @@ local function toggleOptimizator()
                 obj.Enabled = false
             end
         end
-        
-        -- Убираем текстуры
+
+        -- Прячем декали/текстуры
         for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Part") and obj.Texture then
-                obj.Texture = ""
+            if obj:IsA("Texture") or obj:IsA("Decal") then
+                obj.Transparency = 1
             end
         end
-        
-        -- Меняем небо
-        Lighting.Sky.SkyboxBk = "rbxasset://textures/sky/sky_512_bk.tex"
-        Lighting.Sky.SkyboxDn = "rbxasset://textures/sky/sky_512_dn.tex"
-        Lighting.Sky.SkyboxFt = "rbxasset://textures/sky/sky_512_ft.tex"
-        Lighting.Sky.SkyboxLf = "rbxasset://textures/sky/sky_512_lf.tex"
-        Lighting.Sky.SkyboxRt = "rbxasset://textures/sky/sky_512_rt.tex"
-        Lighting.Sky.SkyboxUp = "rbxasset://textures/sky/sky_512_up.tex"
-        
+
+        -- Меняем небо безопасно
+        local sky = Lighting:FindFirstChildOfClass("Sky")
+        if sky then
+            sky.SkyboxBk = "rbxasset://textures/sky/sky_512_bk.tex"
+            sky.SkyboxDn = "rbxasset://textures/sky/sky_512_dn.tex"
+            sky.SkyboxFt = "rbxasset://textures/sky/sky_512_ft.tex"
+            sky.SkyboxLf = "rbxasset://textures/sky/sky_512_lf.tex"
+            sky.SkyboxRt = "rbxasset://textures/sky/sky_512_rt.tex"
+            sky.SkyboxUp = "rbxasset://textures/sky/sky_512_up.tex"
+        end
+
         showNotification("OPTIMIZATOR: ACTIVATED")
     else
         -- Восстанавливаем эффекты
@@ -115,61 +163,103 @@ local function toggleOptimizator()
                 obj.Enabled = true
             end
         end
-        
+
         showNotification("OPTIMIZATOR: DEACTIVATED")
     end
 end
 
--- Функции из вашего файла
+---------------------------------------------------------------------
+-- 👁️ Metavision
+---------------------------------------------------------------------
 local function toggleMetavision()
     metavisionEnabled = not metavisionEnabled
-    
+
     if metavisionEnabled then
         player:SetAttribute("Metavision", true)
         player:SetAttribute("PabloMetavision", true)
-        
+
         pcall(function()
             local rs = game:GetService("ReplicatedStorage")
             if rs:FindFirstChild("METAVISION_ACTIVATION") then
                 rs.METAVISION_ACTIVATION:FireServer()
             end
         end)
-        
+
         showNotification("METAVISION: ACTIVATED")
     else
         player:SetAttribute("Metavision", false)
         player:SetAttribute("PabloMetavision", false)
-        
+
         pcall(function()
             local rs = game:GetService("ReplicatedStorage")
             if rs:FindFirstChild("METAVISION_DEACTIVATION") then
                 rs.METAVISION_DEACTIVATION:FireServer()
             end
         end)
-        
+
         showNotification("METAVISION: DEACTIVATED")
     end
 end
 
-local function lockSpeed()
+---------------------------------------------------------------------
+-- 🦶 Speed
+---------------------------------------------------------------------
+local function toggleSpeed()
     pcall(function()
         local character = player.Character
         if not character then return end
-        
+
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if humanoid then
-            originalWalkSpeed = humanoid.WalkSpeed
-            isSpeedLocked = true
-            
-            while isSpeedLocked and task.wait(0.1) do
-                if humanoid and humanoid.WalkSpeed ~= 65 then
-                    humanoid.WalkSpeed = 65
-                end
+            if isSpeedLocked then
+                isSpeedLocked = false
+                task.wait(0.2)
+                humanoid.WalkSpeed = originalWalkSpeed
+                showNotification("SPEED: UNLOCKED (" .. originalWalkSpeed .. ")")
+            else
+                originalWalkSpeed = humanoid.WalkSpeed
+                humanoid.WalkSpeed = 65
+                isSpeedLocked = true
+
+                task.spawn(function()
+                    while isSpeedLocked and task.wait(0.1) do
+                        local char = player.Character
+                        if char then
+                            local hum = char:FindFirstChildOfClass("Humanoid")
+                            if hum and hum.WalkSpeed ~= 65 then
+                                hum.WalkSpeed = 65
+                            end
+                        else
+                            break
+                        end
+                    end
+                end)
+
+                showNotification("SPEED: LOCKED at 65")
             end
         end
     end)
 end
 
+local function setupSpeedProtection()
+    local character = player.Character
+    if not character then
+        player.CharacterAdded:Wait()
+        character = player.Character
+    end
+
+    local humanoid = character:WaitForChild("Humanoid")
+
+    humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if isSpeedLocked and humanoid.WalkSpeed ~= 65 then
+            humanoid.WalkSpeed = 65
+        end
+    end)
+end
+
+---------------------------------------------------------------------
+-- 📦 Hitboxes
+---------------------------------------------------------------------
 local function extendHitboxes()
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and (obj.Name:find("Hitbox") or obj.Name:find("Tackle")) then
@@ -178,7 +268,7 @@ local function extendHitboxes()
                     Size = obj.Size,
                     CanCollide = obj.CanCollide
                 }
-                
+
                 obj.Size = obj.Size * 3
                 obj.CanCollide = true
             end
@@ -196,36 +286,39 @@ local function restoreHitboxes()
     extendedHitboxes = {}
 end
 
+---------------------------------------------------------------------
+-- 💥 Tackle
+---------------------------------------------------------------------
 local function doTackle()
     pcall(function()
         local character = player.Character
         if not character then return end
-        
+
         local hrp = character:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        
+
         showNotification("TACKLE: ACTIVATED")
-        
+
         local tackleBV = Instance.new("BodyVelocity")
         tackleBV.Name = "TackleBV"
         tackleBV.MaxForce = Vector3.new(4000, 0, 4000)
         tackleBV.Velocity = hrp.CFrame.LookVector * 150
         tackleBV.Parent = hrp
-        
+
         local airTackleRemotes = {
             "AltTackle_RE", "IkkTrackle_RE", "TackleImpact_RE", "Tackle_RE",
             "TackleHit_RE", "TackleSliderE", "WCTackleCancel", "AltTackleFmit",
             "TackleCDRE", "TackleBeastCutscene"
         }
-        
+
         local targets = {}
-        
+
         local ball = workspace:FindFirstChild("Ball")
         if ball then
             table.insert(targets, ball)
         end
-        
-        local players = game:GetService("Players"):GetPlayers()
+
+        local players = Players:GetPlayers()
         for _, targetPlayer in pairs(players) do
             if targetPlayer ~= player and targetPlayer.Character then
                 local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -237,14 +330,17 @@ local function doTackle()
                 end
             end
         end
-        
+
         local remoteLocations = {
-            game:GetService("ReplicatedStorage"), player.PlayerGui,
-            player.Character, workspace, game:GetService("Lighting")
+            game:GetService("ReplicatedStorage"),
+            player.PlayerGui,
+            player.Character,
+            workspace,
+            Lighting
         }
-        
+
         local activatedCount = 0
-        
+
         for _, location in pairs(remoteLocations) do
             if location then
                 for _, remote in pairs(location:GetDescendants()) do
@@ -257,14 +353,14 @@ local function doTackle()
                                         activatedCount = activatedCount + 1
                                     end
                                     remote:FireServer()
-                                    activatedCount = activatedCount + 1
+                                        activatedCount = activatedCount + 1
                                 end)
                             end
                         end
-                        
-                        if remote.Name:lower():find("tackle") or 
-                           remote.Name:lower():find("air") or 
-                           remote.Name:lower():find("hit") then
+
+                        if remote.Name:lower():find("tackle")
+                            or remote.Name:lower():find("air")
+                            or remote.Name:lower():find("hit") then
                             pcall(function()
                                 for _, target in pairs(targets) do
                                     remote:FireServer(target)
@@ -278,15 +374,15 @@ local function doTackle()
                 end
             end
         end
-        
+
         extendHitboxes()
-        
+
         if activatedCount > 0 then
             showNotification("Tackle: " .. activatedCount .. " events")
         else
             showNotification("Tackle: Movement activated")
         end
-        
+
         task.delay(2, function()
             if tackleBV and tackleBV.Parent then
                 tackleBV:Destroy()
@@ -296,116 +392,72 @@ local function doTackle()
     end)
 end
 
+---------------------------------------------------------------------
+-- 🚀 Teleport
+---------------------------------------------------------------------
 local function doTeleport()
     pcall(function()
         local character = player.Character
         if not character then return end
-        
+
         local hrp = character:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        
+
         local team = player.Team and player.Team.Name or "Default"
-        local targetPosition = team == "Red" and Vector3.new(-2263.6, -25.5, 1029.0)
+        local targetPosition = team == "Red"  and Vector3.new(-2263.6, -25.5, 1029.0)
                           or team == "Blue" and Vector3.new(-2839.7, -25.5, 1029.6)
                           or Vector3.new(-2238.1218, -25.3756, 1050.0332)
-        
+
         hrp.CFrame = CFrame.new(targetPosition)
         showNotification("TELEPORT: COMPLETE")
     end)
 end
 
-local function toggleSpeed()
-    pcall(function()
-        local character = player.Character
-        if not character then return end
-        
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            if isSpeedLocked then
-                -- Выключаем speed lock
-                isSpeedLocked = false
-                
-                -- Небольшая задержка чтобы цикл успел остановиться
-                task.wait(0.2)
-                
-                -- Восстанавливаем оригинальную скорость
-                humanoid.WalkSpeed = originalWalkSpeed
-                showNotification("SPEED: UNLOCKED (" .. originalWalkSpeed .. ")")
-            else
-                -- Включаем speed lock
-                originalWalkSpeed = humanoid.WalkSpeed
-                humanoid.WalkSpeed = 65
-                isSpeedLocked = true
-                
-                -- Запускаем цикл блокировки
-                task.spawn(function()
-                    while isSpeedLocked and task.wait(0.1) do
-                        local char = player.Character
-                        if char then
-                            local hum = char:FindFirstChildOfClass("Humanoid")
-                            if hum and hum.WalkSpeed ~= 65 then
-                                hum.WalkSpeed = 65
-                            end
-                        else
-                            break
-                        end
-                    end
-                end)
-                
-                showNotification("SPEED: LOCKED at 65")
-            end
-        end
-    end)
-end
-
+---------------------------------------------------------------------
+-- 🎯 Shot
+---------------------------------------------------------------------
 local function doShot()
     pcall(function()
         local character = player.Character
         if not character then return end
-        
+
         local hrp = character:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        
-        -- Определяем команду
+
         local team = player.Team and player.Team.Name or "Default"
-        
-        -- Получаем направление взгляда (убираем Y для горизонтального полёта)
-        local lookVector = hrp.CFrame.LookVector
+
+        local lookVector    = hrp.CFrame.LookVector
         local flatDirection = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-        
-        -- Прямой вызов ShootRE с быстрым выстрелом
-        local rs = game:GetService("ReplicatedStorage")
+
+        local rs      = game:GetService("ReplicatedStorage")
         local shootRE = rs:WaitForChild("ShootRE", 2)
-        
+
         if not shootRE then
             showNotification("SHOT: ShootRE not found")
             return
         end
-        
+
         local args
-        
+
         if team == "Red" then
-            -- Для красной команды (направление в синие ворота)
             args = {
-                200,                                  -- Мощность
-                flatDirection,                        -- Направление (горизонтально)
-                Vector3.new(12, 0, 0),               -- Дополнительный вектор ускорения
-                hrp.Position + flatDirection * 3,    -- Позиция старта (на 3 стада впереди)
+                200,
+                flatDirection,
+                Vector3.new(12, 0, 0),
+                hrp.Position + flatDirection * 3,
                 false
             }
             showNotification("SHOT: RED TEAM (Fast)")
         elseif team == "Blue" then
-            -- Для синей команды (обратное направление в красные ворота)
             args = {
-                200,                                  -- Мощность
-                -flatDirection,                       -- Обратное направление
-                Vector3.new(-12, 0, 0),              -- Обратный вектор ускорения
-                hrp.Position + (-flatDirection) * 3, -- Позиция старта в обратном направлении
+                200,
+                -flatDirection,
+                Vector3.new(-12, 0, 0),
+                hrp.Position + (-flatDirection) * 3,
                 false
             }
             showNotification("SHOT: BLUE TEAM (Fast)")
         else
-            -- Для остальных команд (базовое направление)
             args = {
                 200,
                 flatDirection,
@@ -415,563 +467,410 @@ local function doShot()
             }
             showNotification("SHOT: DEFAULT (Fast)")
         end
-        
+
         shootRE:FireServer(unpack(args))
     end)
 end
 
--- Переменные для GUI
-local mainGUI
-local mainFrame
-local isGUIVisible = false
-
--- Функция создания GUI для ПК в стиле жидкого стекла
-local function createDesktopGUI()
-    print("PopStar: Creating Desktop GUI...")
-    
-    mainGUI = Instance.new("ScreenGui")
-    mainGUI.Name = "POPSTAR_GUI"
-    mainGUI.ResetOnSpawn = false
-    mainGUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    mainGUI.DisplayOrder = 999
-    mainGUI.Parent = gui
-
-    -- Основной контейнер с эффектом жидкого стекла
-    mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 320, 0, 400)
-    mainFrame.Position = UDim2.new(0.5, -160, 0.5, -200)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    mainFrame.BackgroundTransparency = 0.9
-    mainFrame.BorderSizePixel = 0
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 20)
-    corner.Parent = mainFrame
-    
-    -- Обводка для эффекта стекла
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Thickness = 2
-    stroke.Transparency = 0.7
-    stroke.Parent = mainFrame
-    
-    -- Градиентный фон с эффектом стекла
-    local gradient = Instance.new("UIGradient")
-    gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.3, Color3.fromRGB(240, 240, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 220, 255))
-    })
-    gradient.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0.85),
-        NumberSequenceKeypoint.new(1, 0.92)
-    })
-    gradient.Rotation = 120
-    gradient.Parent = mainFrame
-    
-    -- Заголовок
-    local title = Instance.new("TextLabel")
-    title.Name = "Title"
-    title.Text = "PopStar 2.0"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 28
-    title.Font = Enum.Font.GothamBold
-    title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, 0, 0, 60)
-    title.Position = UDim2.new(0, 0, 0, 10)
-    title.Parent = mainFrame
-    
-    -- Разделитель с градиентом
-    local divider = Instance.new("Frame")
-    divider.Name = "Divider"
-    divider.Size = UDim2.new(0.7, 0, 0, 2)
-    divider.Position = UDim2.new(0.15, 0, 0, 70)
-    divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    divider.BackgroundTransparency = 0.7
-    divider.BorderSizePixel = 0
-    
-    local dividerGradient = Instance.new("UIGradient")
-    dividerGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 100, 255))
-    })
-    dividerGradient.Parent = divider
-    divider.Parent = mainFrame
-    
-    -- Контейнер для кнопок
-    local buttonsContainer = Instance.new("ScrollingFrame")
-    buttonsContainer.Name = "ButtonsContainer"
-    buttonsContainer.Size = UDim2.new(1, -30, 1, -90)
-    buttonsContainer.Position = UDim2.new(0, 15, 0, 80)
-    buttonsContainer.BackgroundTransparency = 1
-    buttonsContainer.BorderSizePixel = 0
-    buttonsContainer.ScrollBarThickness = 4
-    buttonsContainer.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
-    buttonsContainer.ScrollBarImageTransparency = 0.7
-    buttonsContainer.CanvasSize = UDim2.new(0, 0, 0, 500)
-    buttonsContainer.Parent = mainFrame
-    
-    local uiListLayout = Instance.new("UIListLayout")
-    uiListLayout.FillDirection = Enum.FillDirection.Vertical
-    uiListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    uiListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    uiListLayout.Padding = UDim.new(0, 12)
-    uiListLayout.Parent = buttonsContainer
-    
-    -- Функция создания кнопок в стиле жидкого стекла
-    local function createGlassButton(name, color, funcName)
-        local buttonFrame = Instance.new("Frame")
-        buttonFrame.Name = name .. "Button"
-        buttonFrame.Size = UDim2.new(0.95, 0, 0, 45)
-        buttonFrame.BackgroundColor3 = color
-        buttonFrame.BackgroundTransparency = 0.85
-        buttonFrame.BorderSizePixel = 0
-        
-        local buttonCorner = Instance.new("UICorner")
-        buttonCorner.CornerRadius = UDim.new(0, 15)
-        buttonCorner.Parent = buttonFrame
-        
-        -- Обводка кнопки
-        local buttonStroke = Instance.new("UIStroke")
-        buttonStroke.Color = Color3.fromRGB(255, 255, 255)
-        buttonStroke.Thickness = 2
-        buttonStroke.Transparency = 0.7
-        buttonStroke.Parent = buttonFrame
-        
-        -- Градиент для кнопки
-        local buttonGradient = Instance.new("UIGradient")
-        buttonGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-            ColorSequenceKeypoint.new(1, color)
-        })
-        buttonGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.8),
-            NumberSequenceKeypoint.new(1, 0.9)
-        })
-        buttonGradient.Parent = buttonFrame
-        
-        local buttonText = Instance.new("TextLabel")
-        buttonText.Name = "ButtonText"
-        buttonText.Text = name
-        buttonText.TextColor3 = Color3.fromRGB(255, 255, 255)
-        buttonText.TextSize = 16
-        buttonText.Font = Enum.Font.GothamSemibold
-        buttonText.BackgroundTransparency = 1
-        buttonText.Size = UDim2.new(1, 0, 1, 0)
-        buttonText.Parent = buttonFrame
-        
-        local button = Instance.new("TextButton")
-        button.Name = "ClickButton"
-        button.Text = ""
-        button.BackgroundTransparency = 1
-        button.Size = UDim2.new(1, 0, 1, 0)
-        button.Parent = buttonFrame
-        
-        -- Функция обновления текста с биндом
-        local function updateButtonText()
-            local bind = keybinds[funcName]
-            if bind then
-                buttonText.Text = name .. " [" .. bind.Name:gsub("Enum.KeyCode.", "") .. "]"
-            else
-                buttonText.Text = name
-            end
-        end
-        
-        -- Анимации при наведении
-        button.MouseEnter:Connect(function()
-            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                BackgroundTransparency = 0.75,
-                Size = UDim2.new(0.97, 0, 0, 48)
-            })
-            tween:Play()
-        end)
-        
-        button.MouseLeave:Connect(function()
-            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                BackgroundTransparency = 0.85,
-                Size = UDim2.new(0.95, 0, 0, 45)
-            })
-            tween:Play()
-        end)
-        
-        button.MouseButton1Down:Connect(function()
-            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.1), {
-                BackgroundTransparency = 0.7
-            })
-            tween:Play()
-        end)
-        
-        button.MouseButton1Up:Connect(function()
-            local tween = TweenService:Create(buttonFrame, TweenInfo.new(0.1), {
-                BackgroundTransparency = 0.75
-            })
-            tween:Play()
-        end)
-        
-        -- Обработка средней кнопки мыши (колесико) для биндов
-        button.MouseButton2Down:Connect(function()
-            if waitingForBind == funcName then
-                -- Отмена назначения бинда
-                waitingForBind = nil
-                bindingButton = nil
-                updateButtonText()
-                showNotification("Bind cancelled")
-            else
-                -- Начало назначения бинда
-                waitingForBind = funcName
-                bindingButton = buttonText
-                buttonText.Text = "..."
-                showNotification("Press a key or Backspace to clear")
-            end
-        end)
-        
-        updateButtonText()
-        
-        return buttonFrame, button, updateButtonText
-    end
-
-    -- Создаем кнопки с правильными названиями
-    local buttonData = {
-        {"Metavision", Color3.fromRGB(255, 100, 100), toggleMetavision, "toggleMetavision"},
-        {"Speed", Color3.fromRGB(255, 220, 100), toggleSpeed, "toggleSpeed"},
-        {"Shot", Color3.fromRGB(100, 200, 255), doShot, "doShot"},
-        {"Tackle", Color3.fromRGB(255, 200, 100), doTackle, "doTackle"},
-        {"Teleport", Color3.fromRGB(100, 255, 150), doTeleport, "doTeleport"},
-        {"Interface", Color3.fromRGB(150, 255, 200), toggleInterface, "toggleInterface"},
-        {"Optimizator", Color3.fromRGB(200, 100, 255), toggleOptimizator, "toggleOptimizator"}
-    }
-
-    local buttonUpdaters = {}
-
-    for i, data in ipairs(buttonData) do
-        local buttonName, buttonColor, buttonFunc, funcName = data[1], data[2], data[3], data[4]
-        local buttonFrame, button, updateFunc = createGlassButton(buttonName, buttonColor, funcName)
-        buttonFrame.Parent = buttonsContainer
-        
-        buttonUpdaters[funcName] = updateFunc
-        
-        button.MouseButton1Click:Connect(buttonFunc)
-    end
-    
-    -- Глобальная функция для обновления текста кнопок после назначения бинда
-    _G.updateAllButtons = function()
-        for funcName, updateFunc in pairs(buttonUpdaters) do
-            updateFunc()
-        end
-    end
-
-    -- Скрываем GUI по умолчанию
-    mainFrame.Visible = false
-    mainFrame.Parent = mainGUI
-    
-    print("PopStar: Desktop GUI created successfully")
-end
-
--- Функция для переключения видимости GUI
-local function toggleGUI()
-    if not mainFrame then
-        print("PopStar: GUI not created yet, creating now...")
-        createDesktopGUI()
-    end
-    
-    isGUIVisible = not isGUIVisible
-    mainFrame.Visible = isGUIVisible
-    
-    print("PopStar: GUI visibility set to: " .. tostring(isGUIVisible))
-    
-    if isGUIVisible then
-        local tween = TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-            BackgroundTransparency = 0.85,
-            Size = UDim2.new(0, 320, 0, 400)
-        })
-        tween:Play()
-    else
-        local tween = TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-            BackgroundTransparency = 0.95,
-            Size = UDim2.new(0, 320, 0, 0)
-        })
-        tween:Play()
-    end
-end
-
--- Функция создания интерфейса (ватермарка, статистика, игроки)
+---------------------------------------------------------------------
+-- 🧷 Интерфейс (ватермарка, статы, команды)
+---------------------------------------------------------------------
 local function createInterface()
     print("PopStar: Creating Interface...")
-    
+
     interfaceGUI = Instance.new("ScreenGui")
     interfaceGUI.Name = "POPSTAR_INTERFACE"
     interfaceGUI.ResetOnSpawn = false
     interfaceGUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     interfaceGUI.DisplayOrder = 999
     interfaceGUI.Parent = gui
-    
-    -- Ватермарка (верхний левый угол)
+
+    ----------------------------------------------------------------
+    -- ВАТЕРМАРКА - Стильная с логотипом P, градиентом и разделителями
+    ----------------------------------------------------------------
     watermark = Instance.new("Frame")
     watermark.Name = "Watermark"
-    watermark.Size = UDim2.new(0, 250, 0, 35)
-    watermark.Position = UDim2.new(0, 10, 0, 10)
-    watermark.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    watermark.BackgroundTransparency = 0.9
+    watermark.Size = UDim2.new(0, 320, 0, 44)
+    watermark.Position = UDim2.new(0, 16, 0, 16)
+    watermark.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    watermark.BackgroundTransparency = 0.3
     watermark.BorderSizePixel = 0
     watermark.Parent = interfaceGUI
-    
+
     local wmCorner = Instance.new("UICorner")
-    wmCorner.CornerRadius = UDim.new(0, 10)
+    wmCorner.CornerRadius = UDim.new(0, 12)
     wmCorner.Parent = watermark
-    
+
     local wmStroke = Instance.new("UIStroke")
-    wmStroke.Color = Color3.fromRGB(255, 255, 255)
+    wmStroke.Color = Color3.fromRGB(180, 180, 200)
     wmStroke.Thickness = 1.5
-    wmStroke.Transparency = 0.7
+    wmStroke.Transparency = 0.4
+    wmStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     wmStroke.Parent = watermark
-    
+
+    -- Элегантный бело-серый градиент
+    local wmGradient = Instance.new("UIGradient")
+    wmGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0,   Color3.fromRGB(240, 245, 255)),  -- Почти белый
+        ColorSequenceKeypoint.new(0.3, Color3.fromRGB(220, 225, 240)),  -- Светло-серый
+        ColorSequenceKeypoint.new(0.7, Color3.fromRGB(200, 205, 225)),  -- Средний серый
+        ColorSequenceKeypoint.new(1,   Color3.fromRGB(180, 185, 210))   -- Темнее серый
+    })
+    wmGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.85),
+        NumberSequenceKeypoint.new(1, 0.9)
+    })
+    wmGradient.Rotation = 135
+    wmGradient.Parent = watermark
+
+    -- Логотип P
+    local logoFrame = Instance.new("Frame")
+    logoFrame.Name = "Logo"
+    logoFrame.Size = UDim2.new(0, 32, 0, 32)
+    logoFrame.Position = UDim2.new(0, 6, 0.5, -16)
+    logoFrame.BackgroundTransparency = 1
+    logoFrame.Parent = watermark
+
+    local logoP = Instance.new("TextLabel")
+    logoP.Name = "LogoP"
+    logoP.Size = UDim2.new(1, 0, 1, 0)
+    logoP.BackgroundTransparency = 1
+    logoP.Text = "Ⓟ"
+    logoP.TextColor3 = Color3.fromRGB(255, 255, 255)
+    logoP.TextSize = 28
+    logoP.Font = Enum.Font.GothamBlack
+    logoP.TextXAlignment = Enum.TextXAlignment.Center
+    logoP.TextYAlignment = Enum.TextYAlignment.Center
+    logoP.Parent = logoFrame
+
+    local logoGlow = Instance.new("UIGradient")
+    logoGlow.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0,   Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(220, 220, 255)),
+        ColorSequenceKeypoint.new(1,   Color3.fromRGB(255, 255, 255))
+    })
+    logoGlow.Rotation = 45
+    logoGlow.Parent = logoP
+
+    -- Вертикальный разделитель
+    local separator1 = Instance.new("Frame")
+    separator1.Name = "Separator1"
+    separator1.Size = UDim2.new(0, 1, 0.6, 0)
+    separator1.Position = UDim2.new(0, 46, 0.2, 0)
+    separator1.BackgroundColor3 = Color3.fromRGB(150, 150, 180)
+    separator1.BackgroundTransparency = 0.7
+    separator1.BorderSizePixel = 0
+    separator1.Parent = watermark
+
+    -- Текст ватермарки
     local wmText = Instance.new("TextLabel")
     wmText.Name = "Text"
-    wmText.Size = UDim2.new(1, -10, 1, 0)
-    wmText.Position = UDim2.new(0, 5, 0, 0)
+    wmText.Size = UDim2.new(1, -60, 1, 0)
+    wmText.Position = UDim2.new(0, 56, 0, 0)
     wmText.BackgroundTransparency = 1
-    wmText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    wmText.TextSize = 14
-    wmText.Font = Enum.Font.GothamBold
+    wmText.TextColor3 = Color3.fromRGB(230, 235, 255)
+    wmText.TextSize = 16
+    wmText.Font = Enum.Font.GothamMedium
     wmText.TextXAlignment = Enum.TextXAlignment.Left
+    wmText.Text = "Alpha | 00:00:00 MSK | Desktop"
     wmText.Parent = watermark
-    
-    -- Панель статистики (нижний левый угол)
-    statsPanel = Instance.new("Frame")
-    statsPanel.Name = "StatsPanel"
-    statsPanel.Size = UDim2.new(0, 220, 0, 50)
-    statsPanel.Position = UDim2.new(0, 10, 1, -60)
-    statsPanel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    statsPanel.BackgroundTransparency = 0.9
-    statsPanel.BorderSizePixel = 0
-    statsPanel.Parent = interfaceGUI
-    
-    local spCorner = Instance.new("UICorner")
-    spCorner.CornerRadius = UDim.new(0, 10)
-    spCorner.Parent = statsPanel
-    
-    local spStroke = Instance.new("UIStroke")
-    spStroke.Color = Color3.fromRGB(255, 255, 255)
-    spStroke.Thickness = 1.5
-    spStroke.Transparency = 0.7
-    spStroke.Parent = statsPanel
-    
-    local spText = Instance.new("TextLabel")
-    spText.Name = "Text"
-    spText.Size = UDim2.new(1, -10, 1, 0)
-    spText.Position = UDim2.new(0, 5, 0, 0)
-    spText.BackgroundTransparency = 1
-    spText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    spText.TextSize = 16
-    spText.Font = Enum.Font.GothamBold
-    spText.TextXAlignment = Enum.TextXAlignment.Left
-    spText.TextYAlignment = Enum.TextYAlignment.Top
-    spText.Parent = statsPanel
-    
-    -- Панель игроков (правая сторона)
-    playersPanel = Instance.new("Frame")
-    playersPanel.Name = "PlayersPanel"
-    playersPanel.Size = UDim2.new(0, 200, 0, 300)
-    playersPanel.Position = UDim2.new(1, -210, 0, 10)
-    playersPanel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    playersPanel.BackgroundTransparency = 0.9
-    playersPanel.BorderSizePixel = 0
-    playersPanel.Parent = interfaceGUI
-    
-    local ppCorner = Instance.new("UICorner")
-    ppCorner.CornerRadius = UDim.new(0, 10)
-    ppCorner.Parent = playersPanel
-    
-    local ppStroke = Instance.new("UIStroke")
-    ppStroke.Color = Color3.fromRGB(255, 255, 255)
-    ppStroke.Thickness = 1.5
-    ppStroke.Transparency = 0.7
-    ppStroke.Parent = playersPanel
-    
-    -- Заголовок Red Team
-    local redTitle = Instance.new("TextLabel")
-    redTitle.Name = "RedTitle"
-    redTitle.Size = UDim2.new(1, 0, 0, 30)
-    redTitle.Position = UDim2.new(0, 0, 0, 5)
-    redTitle.BackgroundTransparency = 1
-    redTitle.TextColor3 = Color3.fromRGB(255, 100, 100)
-    redTitle.TextSize = 16
-    redTitle.Font = Enum.Font.GothamBold
-    redTitle.Text = "Red Team:"
-    redTitle.Parent = playersPanel
-    
-    -- Список красной команды
-    local redList = Instance.new("ScrollingFrame")
-    redList.Name = "RedList"
-    redList.Size = UDim2.new(1, -10, 0.45, -20)
-    redList.Position = UDim2.new(0, 5, 0, 35)
-    redList.BackgroundTransparency = 1
-    redList.BorderSizePixel = 0
-    redList.ScrollBarThickness = 3
-    redList.ScrollBarImageColor3 = Color3.fromRGB(255, 100, 100)
-    redList.ScrollBarImageTransparency = 0.5
-    redList.CanvasSize = UDim2.new(0, 0, 0, 0)
-    redList.Parent = playersPanel
-    
-    local redLayout = Instance.new("UIListLayout")
-    redLayout.FillDirection = Enum.FillDirection.Vertical
-    redLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    redLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    redLayout.Padding = UDim.new(0, 3)
-    redLayout.Parent = redList
-    
-    -- Заголовок Blue Team
-    local blueTitle = Instance.new("TextLabel")
-    blueTitle.Name = "BlueTitle"
-    blueTitle.Size = UDim2.new(1, 0, 0, 30)
-    blueTitle.Position = UDim2.new(0, 0, 0.5, 5)
-    blueTitle.BackgroundTransparency = 1
-    blueTitle.TextColor3 = Color3.fromRGB(100, 150, 255)
-    blueTitle.TextSize = 16
-    blueTitle.Font = Enum.Font.GothamBold
-    blueTitle.Text = "Blue Team:"
-    blueTitle.Parent = playersPanel
-    
-    -- Список синей команды
-    local blueList = Instance.new("ScrollingFrame")
-    blueList.Name = "BlueList"
-    blueList.Size = UDim2.new(1, -10, 0.45, -20)
-    blueList.Position = UDim2.new(0, 5, 0.5, 35)
-    blueList.BackgroundTransparency = 1
-    blueList.BorderSizePixel = 0
-    blueList.ScrollBarThickness = 3
-    blueList.ScrollBarImageColor3 = Color3.fromRGB(100, 150, 255)
-    blueList.ScrollBarImageTransparency = 0.5
-    blueList.CanvasSize = UDim2.new(0, 0, 0, 0)
-    blueList.Parent = playersPanel
-    
-    local blueLayout = Instance.new("UIListLayout")
-    blueLayout.FillDirection = Enum.FillDirection.Vertical
-    blueLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    blueLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    blueLayout.Padding = UDim.new(0, 3)
-    blueLayout.Parent = blueList
-    
-    -- Обновление ватермарки
+
+    -- Разделители в тексте
+    local textGradient = Instance.new("UIGradient")
+    textGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0,   Color3.fromRGB(230, 235, 255)),  -- Белый для Alpha
+        ColorSequenceKeypoint.new(0.33, Color3.fromRGB(200, 210, 240)), -- Серый для времени
+        ColorSequenceKeypoint.new(0.66, Color3.fromRGB(170, 185, 225)), -- Серый для устройства
+        ColorSequenceKeypoint.new(1,   Color3.fromRGB(230, 235, 255))   -- Возврат к белому
+    })
+    textGradient.Parent = wmText
+
+    -- Акцентная линия снизу
+    local accentLine = Instance.new("Frame")
+    accentLine.Name = "AccentLine"
+    accentLine.Size = UDim2.new(1, -12, 0, 2)
+    accentLine.Position = UDim2.new(0, 6, 1, -4)
+    accentLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    accentLine.BorderSizePixel = 0
+    accentLine.Parent = watermark
+
+    local accentGradient = Instance.new("UIGradient")
+    accentGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0,   Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(180, 190, 220)),
+        ColorSequenceKeypoint.new(1,   Color3.fromRGB(255, 255, 255))
+    })
+    accentGradient.Transparency = NumberSequence.new(0.3)
+    accentGradient.Parent = accentLine
+
+    -- Тень
+    local wmShadow = Instance.new("Frame")
+    wmShadow.Name = "WatermarkShadow"
+    wmShadow.Size = watermark.Size
+    wmShadow.Position = watermark.Position + UDim2.new(0, 2, 0, 2)
+    wmShadow.BackgroundColor3 = Color3.new(0, 0, 0)
+    wmShadow.BackgroundTransparency = 0.85
+    wmShadow.BorderSizePixel = 0
+    wmShadow.ZIndex = watermark.ZIndex - 1
+    wmShadow.Parent = interfaceGUI
+
+    local wmShadowCorner = Instance.new("UICorner")
+    wmShadowCorner.CornerRadius = wmCorner.CornerRadius
+    wmShadowCorner.Parent = wmShadow
+
+    -- Обновление текста с анимацией
     task.spawn(function()
-        while task.wait(1) do
+        local t = 0
+        while task.wait(0.03) do
             if not watermark or not watermark.Parent then break end
-            local moscowTime = os.date("!%H:%M:%S", os.time() + 3*3600) -- МСК = UTC+3
-            local deviceType = isDesktop and "Desktop" or "Mobile"
-            wmText.Text = "R Alpha | " .. moscowTime .. " MSK | " .. deviceType
+
+            local moscowTime = os.date("!%H:%M:%S", os.time() + 3 * 3600)
+            local deviceType = UserInputService.MouseEnabled and "Desktop" or "Mobile"
+            wmText.Text = "Alpha | " .. moscowTime .. " MSK | " .. deviceType
+
+            -- Анимация градиента логотипа
+            t = t + 0.05
+            logoGlow.Offset = Vector2.new(math.sin(t) * 0.2, math.cos(t) * 0.2)
+            
+            -- Анимация акцентной линии
+            accentGradient.Offset = Vector2.new((t % 2) - 1, 0)
         end
     end)
-    
-    -- Обновление статистики
+
+    ----------------------------------------------------------------
+    -- ПАНЕЛЬ СТАТОВ (снизу слева)
+    ----------------------------------------------------------------
+    statsPanel = Instance.new("Frame")
+    statsPanel.Name = "StatsPanel"
+    statsPanel.Size = UDim2.new(0, 240, 0, 60)
+    statsPanel.Position = UDim2.new(0, 16, 1, -76)
+    statsPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    statsPanel.BackgroundTransparency = 0.35
+    statsPanel.BorderSizePixel = 0
+    statsPanel.Parent = interfaceGUI
+
+    local spCorner = Instance.new("UICorner")
+    spCorner.CornerRadius = UDim.new(0, 12)
+    spCorner.Parent = statsPanel
+
+    local spStroke = Instance.new("UIStroke")
+    spStroke.Color = Color3.fromRGB(180, 180, 200)
+    spStroke.Thickness = 1.5
+    spStroke.Transparency = 0.4
+    spStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    spStroke.Parent = statsPanel
+
+    local spGradient = Instance.new("UIGradient")
+    spGradient.Color = wmGradient.Color
+    spGradient.Transparency = wmGradient.Transparency
+    spGradient.Rotation = 135
+    spGradient.Parent = statsPanel
+
+    local spText = Instance.new("TextLabel")
+    spText.Name = "Text"
+    spText.Size = UDim2.new(1, -18, 1, -10)
+    spText.Position = UDim2.new(0, 9, 0, 5)
+    spText.BackgroundTransparency = 1
+    spText.TextColor3 = Color3.fromRGB(235, 240, 255)
+    spText.TextSize = 14
+    spText.Font = Enum.Font.GothamMedium
+    spText.TextXAlignment = Enum.TextXAlignment.Left
+    spText.TextYAlignment = Enum.TextYAlignment.Top
+    spText.Text = "Speed: 0\nX: 0.0  Y: 0.0  Z: 0.0"
+    spText.Parent = statsPanel
+
+    -- обновление статов
     task.spawn(function()
         while task.wait(0.1) do
             if not statsPanel or not statsPanel.Parent then break end
             local character = player.Character
             if character then
                 local humanoid = character:FindFirstChildOfClass("Humanoid")
-                local hrp = character:FindFirstChild("HumanoidRootPart")
+                local hrp      = character:FindFirstChild("HumanoidRootPart")
                 if humanoid and hrp then
                     local speed = math.floor(humanoid.WalkSpeed)
-                    local pos = hrp.Position
-                    spText.Text = string.format("Speed: %d\nX: %.1f  Y: %.1f  Z: %.1f", speed, pos.X, pos.Y, pos.Z)
+                    local pos   = hrp.Position
+                    spText.Text = string.format("Speed: %d\nX: %.1f  Y: %.1f  Z: %.1f",
+                        speed, pos.X, pos.Y, pos.Z)
                 end
             end
         end
     end)
-    
+
+    ----------------------------------------------------------------
+    -- ПАНЕЛЬ ИГРОКОВ (справа) — замена таба
+    ----------------------------------------------------------------
+    playersPanel = Instance.new("Frame")
+    playersPanel.Name = "PlayersPanel"
+    playersPanel.Size = UDim2.new(0, 230, 0, 280)
+    playersPanel.Position = UDim2.new(1, -246, 0, 16)
+    playersPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    playersPanel.BackgroundTransparency = 0.35
+    playersPanel.BorderSizePixel = 0
+    playersPanel.Parent = interfaceGUI
+
+    local ppCorner = Instance.new("UICorner")
+    ppCorner.CornerRadius = UDim.new(0, 12)
+    ppCorner.Parent = playersPanel
+
+    ppStroke = Instance.new("UIStroke")  -- Сохраняем в глобальную переменную
+    ppStroke.Color = Color3.fromRGB(180, 180, 200)
+    ppStroke.Thickness = 1.5
+    ppStroke.Transparency = 0.4
+    ppStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    ppStroke.Parent = playersPanel
+
+    local ppGradient = Instance.new("UIGradient")
+    ppGradient.Color = wmGradient.Color
+    ppGradient.Transparency = wmGradient.Transparency
+    ppGradient.Rotation = 135
+    ppGradient.Parent = playersPanel
+
+    ppShadow = Instance.new("Frame")  -- Сохраняем в глобальную переменную
+    ppShadow.Name = "PlayersShadow"
+    ppShadow.Size = playersPanel.Size
+    ppShadow.Position = playersPanel.Position + UDim2.new(0, 2, 0, 2)
+    ppShadow.BackgroundColor3 = Color3.new(0, 0, 0)
+    ppShadow.BackgroundTransparency = 0.85
+    ppShadow.BorderSizePixel = 0
+    ppShadow.ZIndex = playersPanel.ZIndex - 1
+    ppShadow.Parent = interfaceGUI
+
+    local ppShadowCorner = Instance.new("UICorner")
+    ppShadowCorner.CornerRadius = ppCorner.CornerRadius
+    ppShadowCorner.Parent = ppShadow
+
+    -- Заголовки
+    local redTitle = Instance.new("TextLabel")
+    redTitle.Name = "RedTitle"
+    redTitle.Size = UDim2.new(1, -16, 0, 22)
+    redTitle.Position = UDim2.new(0, 8, 0, 6)
+    redTitle.BackgroundTransparency = 1
+    redTitle.TextColor3 = Color3.fromRGB(255, 180, 180)
+    redTitle.TextSize = 16
+    redTitle.Font = Enum.Font.GothamBold
+    redTitle.TextXAlignment = Enum.TextXAlignment.Left
+    redTitle.Text = "Red Team:"
+    redTitle.Parent = playersPanel
+
+    local redList = Instance.new("ScrollingFrame")
+    redList.Name = "RedList"
+    redList.Size = UDim2.new(1, -16, 0.4, -4)
+    redList.Position = UDim2.new(0, 8, 0, 28)
+    redList.BackgroundTransparency = 1
+    redList.BorderSizePixel = 0
+    redList.ScrollBarThickness = 3
+    redList.ScrollBarImageColor3 = Color3.fromRGB(255, 180, 180)
+    redList.ScrollBarImageTransparency = 0.5
+    redList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    redList.Parent = playersPanel
+
+    local redLayout = Instance.new("UIListLayout")
+    redLayout.FillDirection = Enum.FillDirection.Vertical
+    redLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    redLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+    redLayout.Padding = UDim.new(0, 2)
+    redLayout.Parent = redList
+
+    local blueTitle = Instance.new("TextLabel")
+    blueTitle.Name = "BlueTitle"
+    blueTitle.Size = UDim2.new(1, -16, 0, 22)
+    blueTitle.Position = UDim2.new(0, 8, 0.53, 0)
+    blueTitle.BackgroundTransparency = 1
+    blueTitle.TextColor3 = Color3.fromRGB(180, 210, 255)
+    blueTitle.TextSize = 16
+    blueTitle.Font = Enum.Font.GothamBold
+    blueTitle.TextXAlignment = Enum.TextXAlignment.Left
+    blueTitle.Text = "Blue Team:"
+    blueTitle.Parent = playersPanel
+
+    local blueList = Instance.new("ScrollingFrame")
+    blueList.Name = "BlueList"
+    blueList.Size = UDim2.new(1, -16, 0.4, -6)
+    blueList.Position = UDim2.new(0, 8, 0.53, 24)
+    blueList.BackgroundTransparency = 1
+    blueList.BorderSizePixel = 0
+    blueList.ScrollBarThickness = 3
+    blueList.ScrollBarImageColor3 = Color3.fromRGB(180, 210, 255)
+    blueList.ScrollBarImageTransparency = 0.5
+    blueList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    blueList.Parent = playersPanel
+
+    local blueLayout = Instance.new("UIListLayout")
+    blueLayout.FillDirection = Enum.FillDirection.Vertical
+    blueLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    blueLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+    blueLayout.Padding = UDim.new(0, 2)
+    blueLayout.Parent = blueList
+
     -- Обновление списка игроков
     task.spawn(function()
         while task.wait(2) do
             if not playersPanel or not playersPanel.Parent then break end
-            
-            -- Очищаем старые списки
+
             for _, child in pairs(redList:GetChildren()) do
                 if child:IsA("TextLabel") then child:Destroy() end
             end
             for _, child in pairs(blueList:GetChildren()) do
                 if child:IsA("TextLabel") then child:Destroy() end
             end
-            
-            -- Подсчитываем игроков по командам
-            local redCount = 0
-            local blueCount = 0
-            local players = game:GetService("Players"):GetPlayers()
-            
-            -- Добавляем игроков
+
+            local players = Players:GetPlayers()
+
             for _, plr in pairs(players) do
                 if plr.Team then
                     local label = Instance.new("TextLabel")
-                    label.Size = UDim2.new(1, 0, 0, 20)
+                    label.Size = UDim2.new(1, 0, 0, 18)
                     label.BackgroundTransparency = 1
-                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    label.TextSize = 12
+                    label.TextColor3 = Color3.fromRGB(235, 240, 255)
+                    label.TextSize = 13
                     label.Font = Enum.Font.Gotham
                     label.TextXAlignment = Enum.TextXAlignment.Left
                     label.Text = "  " .. plr.Name
-                    
+
                     if plr.Team.Name == "Red" then
                         label.Parent = redList
-                        redCount = redCount + 1
                     elseif plr.Team.Name == "Blue" then
                         label.Parent = blueList
-                        blueCount = blueCount + 1
                     end
                 end
             end
-            
-            -- Динамически изменяем размер панели в зависимости от количества игроков
-            local totalPlayers = redCount + blueCount
-            local minHeight = 150
-            local maxHeight = 600
-            local heightPerPlayer = 22
-            local newHeight = math.clamp(80 + (totalPlayers * heightPerPlayer), minHeight, maxHeight)
-            
-            playersPanel.Size = UDim2.new(0, 200, 0, newHeight)
-            
-            -- Обновляем размер canvas
-            redList.CanvasSize = UDim2.new(0, 0, 0, redLayout.AbsoluteContentSize.Y)
-            blueList.CanvasSize = UDim2.new(0, 0, 0, blueLayout.AbsoluteContentSize.Y)
+
+            redList.CanvasSize  = UDim2.new(0, 0, 0, redLayout.AbsoluteContentSize.Y + 4)
+            blueList.CanvasSize = UDim2.new(0, 0, 0, blueLayout.AbsoluteContentSize.Y + 4)
         end
     end)
-    
-    -- Система перемещения для ватермарки
-    local draggingWM = false
-    local dragStartWM, startPosWM
-    
+
+    ----------------------------------------------------------------
+    -- Перетаскивание трёх панелей
+    ----------------------------------------------------------------
+    local draggingWM, dragStartWM, startPosWM
     watermark.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingWM = true
+            draggingWM  = true
             dragStartWM = input.Position
-            startPosWM = watermark.Position
+            startPosWM  = watermark.Position
         end
     end)
-    
-    -- Система перемещения для панели статистики
-    local draggingSP = false
-    local dragStartSP, startPosSP
-    
+
+    local draggingSP, dragStartSP, startPosSP
     statsPanel.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingSP = true
+            draggingSP  = true
             dragStartSP = input.Position
-            startPosSP = statsPanel.Position
+            startPosSP  = statsPanel.Position
         end
     end)
-    
-    -- Система перемещения для панели игроков
-    local draggingPP = false
-    local dragStartPP, startPosPP
-    
+
+    local draggingPP, dragStartPP, startPosPP
     playersPanel.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingPP = true
+            draggingPP  = true
             dragStartPP = input.Position
-            startPosPP = playersPanel.Position
+            startPosPP  = playersPanel.Position
         end
     end)
-    
+
     UserInputService.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             if draggingWM then
@@ -980,6 +879,7 @@ local function createInterface()
                     startPosWM.X.Scale, startPosWM.X.Offset + delta.X,
                     startPosWM.Y.Scale, startPosWM.Y.Offset + delta.Y
                 )
+                wmShadow.Position = watermark.Position + UDim2.new(0, 2, 0, 2)
             end
             if draggingSP then
                 local delta = input.Position - dragStartSP
@@ -994,10 +894,11 @@ local function createInterface()
                     startPosPP.X.Scale, startPosPP.X.Offset + delta.X,
                     startPosPP.Y.Scale, startPosPP.Y.Offset + delta.Y
                 )
+                ppShadow.Position = playersPanel.Position + UDim2.new(0, 2, 0, 2)
             end
         end
     end)
-    
+
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             draggingWM = false
@@ -1005,70 +906,198 @@ local function createInterface()
             draggingPP = false
         end
     end)
-    
-    -- Скрываем интерфейс по умолчанию
+
     interfaceGUI.Enabled = false
-    
     print("PopStar: Interface created successfully")
 end
 
--- Функция для переключения интерфейса
-local function toggleInterface()
+
+---------------------------------------------------------------------
+-- 🔁 toggleInterface
+---------------------------------------------------------------------
+toggleInterface = function()
     if not interfaceGUI then
         createInterface()
     end
-    
+
     isInterfaceVisible = not isInterfaceVisible
     interfaceGUI.Enabled = isInterfaceVisible
-    
+
+    -- блюр под интерфейс
+    if blurEffect then
+        blurEffect.Size = isInterfaceVisible and 10 or 0
+    end
+
     showNotification("Interface: " .. (isInterfaceVisible and "ON" or "OFF"))
 end
 
--- Создаем GUI только для ПК
+---------------------------------------------------------------------
+-- 🔄 Функция для переключения панели игроков
+---------------------------------------------------------------------
+local function togglePlayersPanel()
+    if not playersPanel or not playersPanel.Parent then return end
+    
+    local newVisibility = not playersPanel.Visible
+    playersPanel.Visible = newVisibility
+    
+    -- Скрываем/показываем тень
+    if ppShadow and ppShadow.Parent then
+        ppShadow.Visible = newVisibility
+    end
+    
+    -- Скрываем/показываем границу
+    if ppStroke then
+        ppStroke.Enabled = newVisibility
+    end
+    
+    showNotification("Player List: " .. (newVisibility and "ON" or "OFF"))
+end
+
+---------------------------------------------------------------------
+-- 🧊 Создание основного GUI через GlassUI
+---------------------------------------------------------------------
+local function createDesktopGUI()
+    print("PopStar: Creating Desktop GUI via GlassUI...")
+
+    local ui = GlassUI.new("POPSTAR_GUI")
+
+    local window, buttonsContainer = ui:createWindow({
+        Name      = "MainFrame",
+        Title     = "PopStar 2.0",
+        Visible   = false,
+        Draggable = true,
+        Size      = UDim2.new(0, 320, 0, 400),
+        Position  = UDim2.new(0.5, -160, 0.5, -200)
+    })
+
+    mainFrame = window
+
+    local buttonUpdaters = {}
+
+    local function createBoundButton(displayName, color, funcName, func)
+        local buttonFrame, clickButton, buttonText =
+            ui:createButton(buttonsContainer, displayName, color)
+
+        local function updateButtonText()
+            local bind = keybinds[funcName]
+            if bind then
+                buttonText.Text = displayName .. " [" .. bind.Name:gsub("Enum.KeyCode.", "") .. "]"
+            else
+                buttonText.Text = displayName
+            end
+        end
+
+        buttonUpdaters[funcName] = updateButtonText
+        updateButtonText()
+
+        clickButton.MouseButton1Click:Connect(func)
+
+        clickButton.MouseButton2Down:Connect(function()
+            if waitingForBind == funcName then
+                waitingForBind = nil
+                bindingButton  = nil
+                updateButtonText()
+                showNotification("Bind cancelled")
+            else
+                waitingForBind = funcName
+                bindingButton  = buttonText
+                buttonText.Text = "..."
+                showNotification("Press a key or Backspace to clear")
+            end
+        end)
+    end
+
+    createBoundButton("Metavision",  Color3.fromRGB(255, 100, 100), "toggleMetavision",  toggleMetavision)
+    createBoundButton("Speed",       Color3.fromRGB(255, 220, 100), "toggleSpeed",       toggleSpeed)
+    createBoundButton("Shot",        Color3.fromRGB(100, 200, 255), "doShot",            doShot)
+    createBoundButton("Tackle",      Color3.fromRGB(255, 200, 100), "doTackle",          doTackle)
+    createBoundButton("Teleport",    Color3.fromRGB(100, 255, 150), "doTeleport",        doTeleport)
+    createBoundButton("Interface",   Color3.fromRGB(150, 255, 200), "toggleInterface",   toggleInterface)
+    createBoundButton("Optimizator", Color3.fromRGB(200, 100, 255), "toggleOptimizator", toggleOptimizator)
+
+    _G.updateAllButtons = function()
+        for _, updater in pairs(buttonUpdaters) do
+            updater()
+        end
+    end
+
+    print("PopStar: Desktop GUI created successfully (GlassUI)")
+end
+
+---------------------------------------------------------------------
+-- 👀 Переключение видимости главного окна
+---------------------------------------------------------------------
+local function toggleGUI()
+    if not mainFrame then
+        print("PopStar: GUI not created yet, creating now...")
+        createDesktopGUI()
+    end
+
+    isGUIVisible = not isGUIVisible
+    mainFrame.Visible = isGUIVisible
+
+    print("PopStar: GUI visibility set to: " .. tostring(isGUIVisible))
+
+    if isGUIVisible then
+        TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            BackgroundTransparency = 0.85,
+            Size = UDim2.new(0, 320, 0, 400)
+        }):Play()
+    else
+        TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            BackgroundTransparency = 0.95,
+            Size = UDim2.new(0, 320, 0, 0)
+        }):Play()
+    end
+end
+
+---------------------------------------------------------------------
+-- 🖥️ Инициализация для Desktop
+---------------------------------------------------------------------
 if isDesktop then
     print("PopStar: Initializing Desktop version...")
-    
+
     createDesktopGUI()
-    createInterface()  -- Создаём интерфейс сразу
-    interfaceGUI.Enabled = true  -- Включаем его по умолчанию
+    createInterface()
+    interfaceGUI.Enabled = true
     isInterfaceVisible = true
-    
-    -- Привязываем открытие/закрытие к правому Shift
+
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
-        
+
+        -- TAB — показать/спрятать свою таблицу игроков
+        if input.KeyCode == Enum.KeyCode.Tab then
+            togglePlayersPanel()
+            return
+        end
+
+        -- RightShift — открыть/закрыть основное окно
         if input.KeyCode == Enum.KeyCode.RightShift then
             print("PopStar: RightShift pressed - toggling GUI")
             toggleGUI()
+            return
         end
-    end)
 
-    -- Система биндов клавиш
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        -- Если ожидаем назначения бинда
+        -- Режим назначения бинда
         if waitingForBind then
             if input.KeyCode == Enum.KeyCode.Backspace then
-                -- Удаляем бинд
                 keybinds[waitingForBind] = nil
                 showNotification("Bind removed")
             elseif input.KeyCode ~= Enum.KeyCode.Unknown then
-                -- Назначаем новый бинд
                 keybinds[waitingForBind] = input.KeyCode
                 showNotification("Bind set: " .. input.KeyCode.Name:gsub("Enum.KeyCode.", ""))
             end
-            
-            -- Обновляем текст кнопки и выходим из режима ожидания
+
             if _G.updateAllButtons then
                 _G.updateAllButtons()
             end
+
             waitingForBind = nil
-            bindingButton = nil
+            bindingButton  = nil
             return
         end
-        
-        -- Проверяем назначенные бинды
+
+        -- Кастомные бинды
         for funcName, keyCode in pairs(keybinds) do
             if input.KeyCode == keyCode then
                 if funcName == "toggleMetavision" then
@@ -1089,82 +1118,37 @@ if isDesktop then
                 return
             end
         end
-        
-        -- Стандартный бинд для Metavision на N (если не назначен другой)
+
+        -- Стандартные бинды по умолчанию
         if input.KeyCode == Enum.KeyCode.N and not keybinds.toggleMetavision then
             print("PopStar: N pressed - toggling Metavision")
             toggleMetavision()
         end
-        
-        -- Стандартный бинд для Interface на I (если не назначен другой)
+
         if input.KeyCode == Enum.KeyCode.I and not keybinds.toggleInterface then
             print("PopStar: I pressed - toggling Interface")
             toggleInterface()
         end
     end)
-
-    -- Система перемещения GUI
-    local dragging = false
-    local dragStart, startPos
-
-    mainFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = mainFrame.Position
-            print("PopStar: Started dragging GUI")
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(
-                startPos.X.Scale, 
-                startPos.X.Offset + delta.X, 
-                startPos.Y.Scale, 
-                startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-            print("PopStar: Stopped dragging GUI")
-        end
-    end)
 end
 
--- Защита от сброса скорости
-local function setupSpeedProtection()
-    local character = player.Character
-    if not character then
-        player.CharacterAdded:Wait()
-        character = player.Character
-    end
-    
-    local humanoid = character:WaitForChild("Humanoid")
-    
-    humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-        if isSpeedLocked and humanoid.WalkSpeed ~= 65 then
-            humanoid.WalkSpeed = 65
-        end
-    end)
-end
-
--- Инициализация защиты скорости
+---------------------------------------------------------------------
+-- 🛡️ Защита скорости
+---------------------------------------------------------------------
 player.CharacterAdded:Connect(setupSpeedProtection)
 if player.Character then
     setupSpeedProtection()
 end
 
+---------------------------------------------------------------------
+-- ✅ Финальные логи
+---------------------------------------------------------------------
 print("PopStar 2.0 Script: Fully loaded!")
 showNotification("PopStar 2.0 Loaded")
 
--- Дебаг информация
 print("PopStar Debug Info:")
+print("- TAB: Toggle custom player list")
 print("- RightShift: Open/Close GUI")
-print("- N: Toggle Metavision")
-print("- I: Toggle Interface")
+print("- N: Toggle Metavision (если нет кастом бинда)")
+print("- I: Toggle Interface (если нет кастом бинда)")
 print("- Device: " .. (isDesktop and "Desktop" or "Mobile"))
