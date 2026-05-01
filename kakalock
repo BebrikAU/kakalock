@@ -40,6 +40,64 @@ local isDesktop = UserInputService.MouseEnabled
 
 print("PopStar Device: Mobile=" .. tostring(isMobile) .. ", Desktop=" .. tostring(isDesktop))
 
+---------------------------------------------------------------------
+-- 📐 Адаптивная система масштабирования
+---------------------------------------------------------------------
+local camera = workspace.CurrentCamera
+local BASE_W, BASE_H = 1920, 1080
+local scale = 1
+
+local function calcScale()
+    local vp = camera.ViewportSize
+    return math.clamp(math.min(vp.X / BASE_W, vp.Y / BASE_H), 0.38, 1.15)
+end
+
+scale = calcScale()
+do
+    local vp = camera.ViewportSize
+    print(string.format("PopStar Scale: %.2f (viewport %dx%d)", scale, vp.X, vp.Y))
+end
+
+local function px(n) return math.round(n * scale) end
+local function fs(n) return math.max(8, math.round(n * scale)) end
+
+-- Дебаунс пересоздания при ресайзе окна
+local resizeDebounce = false
+local function onViewportChanged()
+    local newScale = calcScale()
+    if math.abs(newScale - scale) < 0.03 then return end
+    if resizeDebounce then return end
+    resizeDebounce = true
+    task.delay(0.4, function()
+        resizeDebounce = false
+        scale = calcScale()
+        local vp = camera.ViewportSize
+        print(string.format("PopStar Rescale: %.2f (%dx%d)", scale, vp.X, vp.Y))
+
+        if interfaceGUI and interfaceGUI.Parent then
+            interfaceGUI:Destroy()
+            interfaceGUI = nil
+            watermark    = nil
+            statsPanel   = nil
+            playersPanel = nil
+            ppShadow     = nil
+            ppStroke     = nil
+        end
+        createInterface()
+        interfaceGUI.Enabled = isInterfaceVisible
+
+        if isMobile and mobileGui and mobileGui.Parent then
+            mobileGui:Destroy()
+            mobileGui = nil
+            createMobileGUI()
+        end
+
+        showNotification(string.format("Rescaled: %.0f%%", scale * 100))
+    end)
+end
+
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(onViewportChanged)
+
 -- Глобальные переменные
 local originalWalkSpeed = 16
 local isSpeedLocked     = false
@@ -322,7 +380,7 @@ local function toggleAutoFarm()
                     autoFarmShoot()
                 end
 
-                task.wait(0.05)
+                task.wait(0.3)
             end
         end)
     else
@@ -380,17 +438,20 @@ local function createInterface()
     ----------------------------------------------------------------
     -- ВАТЕРМАРКА
     ----------------------------------------------------------------
+    -- Пересчитываем масштаб на момент создания
+    scale = calcScale()
+
     watermark = Instance.new("Frame")
     watermark.Name = "Watermark"
-    watermark.Size = UDim2.new(0, 320, 0, 44)
-    watermark.Position = UDim2.new(0, 16, 0, 16)
+    watermark.Size = UDim2.new(0, px(320), 0, px(44))
+    watermark.Position = UDim2.new(0, px(16), 0, px(16))
     watermark.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     watermark.BackgroundTransparency = 0.3
     watermark.BorderSizePixel = 0
     watermark.Parent = interfaceGUI
 
     local wmCorner = Instance.new("UICorner")
-    wmCorner.CornerRadius = UDim.new(0, 12)
+    wmCorner.CornerRadius = UDim.new(0, px(12))
     wmCorner.Parent = watermark
 
     local wmStroke = Instance.new("UIStroke")
@@ -416,8 +477,8 @@ local function createInterface()
 
     -- Логотип P
     local logoFrame = Instance.new("Frame")
-    logoFrame.Size = UDim2.new(0, 32, 0, 32)
-    logoFrame.Position = UDim2.new(0, 6, 0.5, -16)
+    logoFrame.Size = UDim2.new(0, px(32), 0, px(32))
+    logoFrame.Position = UDim2.new(0, px(6), 0.5, -px(16))
     logoFrame.BackgroundTransparency = 1
     logoFrame.Parent = watermark
 
@@ -426,7 +487,7 @@ local function createInterface()
     logoP.BackgroundTransparency = 1
     logoP.Text = "Ⓟ"
     logoP.TextColor3 = Color3.fromRGB(255, 255, 255)
-    logoP.TextSize = 28
+    logoP.TextSize = fs(28)
     logoP.Font = Enum.Font.GothamBlack
     logoP.TextXAlignment = Enum.TextXAlignment.Center
     logoP.TextYAlignment = Enum.TextYAlignment.Center
@@ -444,7 +505,7 @@ local function createInterface()
     -- Разделитель
     local separator1 = Instance.new("Frame")
     separator1.Size = UDim2.new(0, 1, 0.6, 0)
-    separator1.Position = UDim2.new(0, 46, 0.2, 0)
+    separator1.Position = UDim2.new(0, px(46), 0.2, 0)
     separator1.BackgroundColor3 = Color3.fromRGB(150, 150, 180)
     separator1.BackgroundTransparency = 0.7
     separator1.BorderSizePixel = 0
@@ -453,11 +514,11 @@ local function createInterface()
     -- Текст ватермарки
     local wmText = Instance.new("TextLabel")
     wmText.Name = "Text"
-    wmText.Size = UDim2.new(1, -60, 1, 0)
-    wmText.Position = UDim2.new(0, 56, 0, 0)
+    wmText.Size = UDim2.new(1, -px(60), 1, 0)
+    wmText.Position = UDim2.new(0, px(56), 0, 0)
     wmText.BackgroundTransparency = 1
     wmText.TextColor3 = Color3.fromRGB(230, 235, 255)
-    wmText.TextSize = 16
+    wmText.TextSize = fs(16)
     wmText.Font = Enum.Font.GothamMedium
     wmText.TextXAlignment = Enum.TextXAlignment.Left
     wmText.Text = "Alpha | 00:00:00 MSK | Desktop"
@@ -466,7 +527,7 @@ local function createInterface()
     -- Акцентная линия
     local accentLine = Instance.new("Frame")
     accentLine.Size = UDim2.new(1, -12, 0, 2)
-    accentLine.Position = UDim2.new(0, 6, 1, -4)
+    accentLine.Position = UDim2.new(0, px(6), 1, -px(4))
     accentLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     accentLine.BorderSizePixel = 0
     accentLine.Parent = watermark
@@ -483,7 +544,7 @@ local function createInterface()
     -- Тень
     local wmShadow = Instance.new("Frame")
     wmShadow.Size = watermark.Size
-    wmShadow.Position = watermark.Position + UDim2.new(0, 2, 0, 2)
+    wmShadow.Position = watermark.Position + UDim2.new(0, px(2), 0, px(2))
     wmShadow.BackgroundColor3 = Color3.new(0, 0, 0)
     wmShadow.BackgroundTransparency = 0.85
     wmShadow.BorderSizePixel = 0
@@ -512,14 +573,14 @@ local function createInterface()
     ----------------------------------------------------------------
     statsPanel = Instance.new("Frame")
     statsPanel.Name = "StatsPanel"
-    statsPanel.Size = UDim2.new(0, 240, 0, 60)
-    statsPanel.Position = UDim2.new(0, 16, 1, -76)
+    statsPanel.Size = UDim2.new(0, px(240), 0, px(60))
+    statsPanel.Position = UDim2.new(0, px(16), 1, -px(76))
     statsPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     statsPanel.BackgroundTransparency = 0.35
     statsPanel.BorderSizePixel = 0
     statsPanel.Parent = interfaceGUI
 
-    Instance.new("UICorner", statsPanel).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", statsPanel).CornerRadius = UDim.new(0, px(12))
 
     local spStroke = Instance.new("UIStroke", statsPanel)
     spStroke.Color = Color3.fromRGB(180, 180, 200)
@@ -534,11 +595,11 @@ local function createInterface()
 
     local spText = Instance.new("TextLabel", statsPanel)
     spText.Name = "Text"
-    spText.Size = UDim2.new(1, -18, 1, -10)
-    spText.Position = UDim2.new(0, 9, 0, 5)
+    spText.Size = UDim2.new(1, -px(18), 1, -px(10))
+    spText.Position = UDim2.new(0, px(9), 0, px(5))
     spText.BackgroundTransparency = 1
     spText.TextColor3 = Color3.fromRGB(235, 240, 255)
-    spText.TextSize = 14
+    spText.TextSize = fs(14)
     spText.Font = Enum.Font.GothamMedium
     spText.TextXAlignment = Enum.TextXAlignment.Left
     spText.TextYAlignment = Enum.TextYAlignment.Top
@@ -567,14 +628,14 @@ local function createInterface()
     ----------------------------------------------------------------
     playersPanel = Instance.new("Frame")
     playersPanel.Name = "PlayersPanel"
-    playersPanel.Size = UDim2.new(0, 230, 0, 280)
-    playersPanel.Position = UDim2.new(1, -246, 0, 16)
+    playersPanel.Size = UDim2.new(0, px(230), 0, px(280))
+    playersPanel.Position = UDim2.new(1, -px(246), 0, px(16))
     playersPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     playersPanel.BackgroundTransparency = 0.35
     playersPanel.BorderSizePixel = 0
     playersPanel.Parent = interfaceGUI
 
-    Instance.new("UICorner", playersPanel).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", playersPanel).CornerRadius = UDim.new(0, px(12))
 
     ppStroke = Instance.new("UIStroke", playersPanel)
     ppStroke.Color = Color3.fromRGB(180, 180, 200)
@@ -590,45 +651,45 @@ local function createInterface()
     ppShadow = Instance.new("Frame")
     ppShadow.Name = "PlayersShadow"
     ppShadow.Size = playersPanel.Size
-    ppShadow.Position = playersPanel.Position + UDim2.new(0, 2, 0, 2)
+    ppShadow.Position = playersPanel.Position + UDim2.new(0, px(2), 0, px(2))
     ppShadow.BackgroundColor3 = Color3.new(0, 0, 0)
     ppShadow.BackgroundTransparency = 0.85
     ppShadow.BorderSizePixel = 0
     ppShadow.ZIndex = playersPanel.ZIndex - 1
     ppShadow.Parent = interfaceGUI
-    Instance.new("UICorner", ppShadow).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", ppShadow).CornerRadius = UDim.new(0, px(12))
 
-    -- Заголовки и списки команд
-    local function makeTeamSection(title, color, yScale, yOffset, scrollColor)
+    -- Заголовки и списки команд (yOffset в базовых пикселях, px() применяется внутри)
+    local function makeTeamSection(title, color, yScale, yOffsetBase)
         local titleLabel = Instance.new("TextLabel", playersPanel)
-        titleLabel.Size = UDim2.new(1, -16, 0, 22)
-        titleLabel.Position = UDim2.new(0, 8, yScale, yOffset)
+        titleLabel.Size = UDim2.new(1, -px(16), 0, px(22))
+        titleLabel.Position = UDim2.new(0, px(8), yScale, px(yOffsetBase))
         titleLabel.BackgroundTransparency = 1
         titleLabel.TextColor3 = color
-        titleLabel.TextSize = 16
+        titleLabel.TextSize = fs(16)
         titleLabel.Font = Enum.Font.GothamBold
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.Text = title
 
         local list = Instance.new("ScrollingFrame", playersPanel)
-        list.Size = UDim2.new(1, -16, 0.4, -4)
-        list.Position = UDim2.new(0, 8, yScale, yOffset + 24)
+        list.Size = UDim2.new(1, -px(16), 0.4, -px(4))
+        list.Position = UDim2.new(0, px(8), yScale, px(yOffsetBase + 24))
         list.BackgroundTransparency = 1
         list.BorderSizePixel = 0
-        list.ScrollBarThickness = 3
+        list.ScrollBarThickness = math.max(2, px(3))
         list.ScrollBarImageColor3 = color
         list.ScrollBarImageTransparency = 0.5
         list.CanvasSize = UDim2.new(0, 0, 0, 0)
 
         local layout = Instance.new("UIListLayout", list)
         layout.FillDirection = Enum.FillDirection.Vertical
-        layout.Padding = UDim.new(0, 2)
+        layout.Padding = UDim.new(0, px(2))
 
         return list, layout
     end
 
-    local redList, redLayout   = makeTeamSection("Red Team:", Color3.fromRGB(255, 180, 180), 0, 6,   Color3.fromRGB(255, 180, 180))
-    local blueList, blueLayout = makeTeamSection("Blue Team:", Color3.fromRGB(180, 210, 255), 0.53, 0, Color3.fromRGB(180, 210, 255))
+    local redList, redLayout   = makeTeamSection("Red Team:",  Color3.fromRGB(255, 180, 180), 0,    6)
+    local blueList, blueLayout = makeTeamSection("Blue Team:", Color3.fromRGB(180, 210, 255), 0.53, 0)
 
     task.spawn(function()
         while task.wait(2) do
@@ -644,10 +705,10 @@ local function createInterface()
             for _, plr in pairs(Players:GetPlayers()) do
                 if plr.Team then
                     local label = Instance.new("TextLabel")
-                    label.Size = UDim2.new(1, 0, 0, 18)
+                    label.Size = UDim2.new(1, 0, 0, px(18))
                     label.BackgroundTransparency = 1
                     label.TextColor3 = Color3.fromRGB(235, 240, 255)
-                    label.TextSize = 13
+                    label.TextSize = fs(13)
                     label.Font = Enum.Font.Gotham
                     label.TextXAlignment = Enum.TextXAlignment.Left
                     label.Text = "  " .. plr.Name
@@ -752,6 +813,8 @@ end
 local function createDesktopGUI()
     print("PopStar: Creating Desktop GUI via GlassUI...")
 
+    scale = calcScale()
+
     local ui = GlassUI.new("POPSTAR_GUI")
 
     local window, buttonsContainer = ui:createWindow({
@@ -759,8 +822,8 @@ local function createDesktopGUI()
         Title     = "PopStar 2.0",
         Visible   = false,
         Draggable = true,
-        Size      = UDim2.new(0, 320, 0, 380),
-        Position  = UDim2.new(0.5, -160, 0.5, -190)
+        Size      = UDim2.new(0, px(320), 0, px(380)),
+        Position  = UDim2.new(0.5, -px(160), 0.5, -px(190))
     })
 
     mainFrame = window
@@ -823,6 +886,9 @@ end
 local function createMobileGUI()
     print("PopStar: Creating Mobile GUI...")
 
+    -- Пересчитываем масштаб
+    scale = calcScale()
+
     mobileGui = Instance.new("ScreenGui")
     mobileGui.Name = "POPSTAR_MOBILE"
     mobileGui.ResetOnSpawn = false
@@ -830,11 +896,22 @@ local function createMobileGUI()
     mobileGui.DisplayOrder = 100
     mobileGui.Parent = gui
 
-    -- Фрейм кнопок (горизонтальная панель снизу)
+    -- Размер кнопок: вписываем 6 кнопок + отступы в ширину экрана
+    local vpW    = camera.ViewportSize.X
+    local btnCnt = 6
+    local btnGap = math.max(4, math.round(vpW * 0.015))
+    local btnPad = math.max(8, math.round(vpW * 0.02))
+    local btnSize = math.clamp(
+        math.floor((vpW - 2*btnPad - (btnCnt-1)*btnGap) / btnCnt),
+        44, 100  -- мин 44px (тачзона), макс 100px
+    )
+    local panelH = btnSize + px(20)
+    local padBot = px(10)
+
     local panel = Instance.new("Frame")
     panel.Name = "MobilePanel"
-    panel.Size = UDim2.new(1, -20, 0, 120)
-    panel.Position = UDim2.new(0, 10, 1, -130)
+    panel.Size = UDim2.new(1, -px(20), 0, panelH)
+    panel.Position = UDim2.new(0, px(10), 1, -(panelH + padBot))
     panel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
     panel.BackgroundTransparency = 0.3
     panel.BorderSizePixel = 0
@@ -842,7 +919,7 @@ local function createMobileGUI()
     panel.Parent = mobileGui
 
     local panelCorner = Instance.new("UICorner")
-    panelCorner.CornerRadius = UDim.new(0, 14)
+    panelCorner.CornerRadius = UDim.new(0, px(14))
     panelCorner.Parent = panel
 
     local panelStroke = Instance.new("UIStroke")
@@ -856,31 +933,30 @@ local function createMobileGUI()
     layout.FillDirection = Enum.FillDirection.Horizontal
     layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    layout.Padding = UDim.new(0, 8)
+    layout.Padding = UDim.new(0, btnGap)
     layout.Parent = panel
 
     local padding = Instance.new("UIPadding")
-    padding.PaddingLeft = UDim.new(0, 10)
-    padding.PaddingRight = UDim.new(0, 10)
+    padding.PaddingLeft  = UDim.new(0, btnPad)
+    padding.PaddingRight = UDim.new(0, btnPad)
     padding.Parent = panel
 
-    -- Функция создания мобильной кнопки
     local function makeMobileBtn(name, label, color, func)
         local btn = Instance.new("TextButton")
         btn.Name = name
-        btn.Size = UDim2.new(0, 90, 0, 90)
+        btn.Size = UDim2.new(0, btnSize, 0, btnSize)
         btn.BackgroundColor3 = color
         btn.BackgroundTransparency = 0.15
         btn.BorderSizePixel = 0
         btn.Text = label
         btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.TextSize = 14
+        btn.TextSize = fs(14)
         btn.Font = Enum.Font.GothamBold
         btn.AutoButtonColor = false
         btn.Parent = panel
 
         local btnCorner = Instance.new("UICorner")
-        btnCorner.CornerRadius = UDim.new(0, 12)
+        btnCorner.CornerRadius = UDim.new(0, px(12))
         btnCorner.Parent = btn
 
         local btnStroke = Instance.new("UIStroke")
@@ -891,7 +967,6 @@ local function createMobileGUI()
         btnStroke.Parent = btn
 
         btn.TouchTap:Connect(function()
-            -- Анимация нажатия
             TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundTransparency = 0.4}):Play()
             task.delay(0.15, function()
                 TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundTransparency = 0.15}):Play()
@@ -907,24 +982,24 @@ local function createMobileGUI()
     makeMobileBtn("ShotBtn",       "SHOT",           Color3.fromRGB(50, 150, 220),  doShot)
     makeMobileBtn("AutoFarmBtn",   "AUTO\nOFF",      Color3.fromRGB(50, 50, 70),    toggleAutoFarm)
     makeMobileBtn("TeleportBtn",   "TELE\nPORT",     Color3.fromRGB(60, 180, 100),  doTeleport)
-    makeMobileBtn("OptBtn",        "VISUAL",         Color3.fromRGB(160, 60, 220),  toggleOptimizator)
+    makeMobileBtn("OptBtn",        "OPT",            Color3.fromRGB(160, 60, 220),  toggleOptimizator)
 
     -- Кнопка открытия интерфейса (мини, сверху)
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Name = "ToggleInterfaceBtn"
-    toggleBtn.Size = UDim2.new(0, 44, 0, 44)
-    toggleBtn.Position = UDim2.new(0, 10, 0, 16)
+    toggleBtn.Size = UDim2.new(0, px(44), 0, px(44))
+    toggleBtn.Position = UDim2.new(0, px(10), 0, px(16))
     toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
     toggleBtn.BackgroundTransparency = 0.3
     toggleBtn.BorderSizePixel = 0
     toggleBtn.Text = "☰"
     toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleBtn.TextSize = 22
+    toggleBtn.TextSize = fs(22)
     toggleBtn.Font = Enum.Font.GothamBold
     toggleBtn.Parent = mobileGui
 
     local tBtnCorner = Instance.new("UICorner")
-    tBtnCorner.CornerRadius = UDim.new(0, 10)
+    tBtnCorner.CornerRadius = UDim.new(0, px(10))
     tBtnCorner.Parent = toggleBtn
 
     local tBtnStroke = Instance.new("UIStroke")
@@ -960,7 +1035,7 @@ local function createMobileGUI()
         end
     end)
 
-    print("PopStar: Mobile GUI created")
+    print(string.format("PopStar: Mobile GUI created (scale=%.2f, btnSize=%d)", scale, btnSize))
 end
 
 ---------------------------------------------------------------------
@@ -978,12 +1053,12 @@ local function toggleGUI()
     if isGUIVisible then
         TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
             BackgroundTransparency = 0.85,
-            Size = UDim2.new(0, 320, 0, 380)
+            Size = UDim2.new(0, px(320), 0, px(380))
         }):Play()
     else
         TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
             BackgroundTransparency = 0.95,
-            Size = UDim2.new(0, 320, 0, 0)
+            Size = UDim2.new(0, px(320), 0, 0)
         }):Play()
     end
 end
