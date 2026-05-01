@@ -907,7 +907,7 @@ local function createMobileGUI()
     makeMobileBtn("ShotBtn",       "SHOT",           Color3.fromRGB(50, 150, 220),  doShot)
     makeMobileBtn("AutoFarmBtn",   "AUTO\nOFF",      Color3.fromRGB(50, 50, 70),    toggleAutoFarm)
     makeMobileBtn("TeleportBtn",   "TELE\nPORT",     Color3.fromRGB(60, 180, 100),  doTeleport)
-    makeMobileBtn("OptBtn",        "OPT",            Color3.fromRGB(160, 60, 220),  toggleOptimizator)
+    makeMobileBtn("OptBtn",        "VISUAL",         Color3.fromRGB(160, 60, 220),  toggleOptimizator)
 
     -- Кнопка открытия интерфейса (мини, сверху)
     local toggleBtn = Instance.new("TextButton")
