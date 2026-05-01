@@ -322,7 +322,7 @@ local function toggleAutoFarm()
                     autoFarmShoot()
                 end
 
-                task.wait(0.3)
+                task.wait(0.05)
             end
         end)
     else
